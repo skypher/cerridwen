@@ -6,9 +6,10 @@
 # also for the sun, moon and asteroids.
 
 import swisseph as sweph
-import time
+import time, calendar
 import math
 import numpy as np
+import collections
 
 sweph.set_ephe_path('/home/sky/eph/sweph')
 
@@ -19,12 +20,18 @@ def jd_now():
                         gmtime.tm_mday,
                         gmtime.tm_hour+((gmtime.tm_min * 100 / 60) / 100))
 
-signs = ['Ari','Tau','Gem','Can','Leo','Vir',
-         'Lib','Sco','Sag','Cap','Aqu','Pis'];
+signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
+         'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'];
+
+traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
 
 class Planet:
     def __init__(self, planet_id):
         self.id = planet_id
+        self.Position = collections.namedtuple('Position',
+                ['sign', 'degrees', 'minutes', 'absolute_degrees'])
+        self.Timespec = collections.namedtuple('Timespec',
+                ['jd', 'delta_jd'])
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -38,7 +45,7 @@ class Planet:
         sign = signs[int(long / 30)]
         reldeg = long % 30.0
         minutes = ((reldeg % 1) * 100) * 60 / 100
-        return (sign, reldeg, minutes, long)
+        return self.Position._make([sign, reldeg, minutes, long])
 
     def speed(self, jd=jd_now()):
         speed = sweph.calc_ut(jd, self.id)[3]
@@ -59,22 +66,27 @@ class Planet:
         sun = Planet(sweph.SUN)
         return self.angle(sun, jd) / 360.0
 
-    def next_angle_to_planet(self, planet, target_angle, jd=jd_now(), orb="auto", lookahead="auto"):
-        # TODO: set lookahead, sampling_interval and orb according to the speed of planets involved.
+    def next_angle_to_planet(self, planet, target_angle, jd=jd_now(),
+                             orb="auto", lookahead="auto"):
+        """Return (jd, delta_jd) indicating the time of the next target_angle
+        to a planet.
+        Return None if no result could be found in the requested lookahead
+        period."""
+        # TODO: set lookahead, sampling_interval and orb according to the speed
+        #       of planets involved, if "auto".
         # TODO: honor orb
         assert(target_angle<360)
         if lookahead == "auto":
             lookahead = 80 # days
-        next_angles = self.angles_to_planet_within_period(planet,
-                target_angle, jd, jd+lookahead)
+        next_angles = self.angles_to_planet_within_period(planet, target_angle, jd, jd+lookahead)
         if next_angles:
-            next_angle_jd = next_angles[0]
-        delta_jd = next_angle_jd - jd
-        return (next_angle_jd, delta_jd)
+            next_angle_jd = next_angles[0]['jd']
+            delta_jd = next_angle_jd - jd
+            return (next_angle_jd, delta_jd)
+        else:
+            return None
 
-    def angles_to_planet_within_period(self, planet, target_angle, jd_start, jd_end, sample_interval="auto", passes=3):
-        # TODO: take a closer look at the interesting areas and sample again
-        # with high freq to get more accurate results.
+    def angles_to_planet_within_period(self, planet, target_angle, jd_start, jd_end, sample_interval="auto", passes=6):
         assert(target_angle<360)
         if sample_interval == "auto":
             sample_interval = 1/4 # days
@@ -87,32 +99,49 @@ class Planet:
         target_adjusted_angles = (angles - target_angle) % 360
         sign_changes = np.roll(np.diff(np.sign(np.diff(target_adjusted_angles))) != 0, 1)
         matching_jds = jds[sign_changes]
-        
+
         if matching_jds.size < 2:
             return None
 
-        matching_angles = angle_at_jd_v(matching_jds)
-        print(matching_jds, matching_angles)
+        matches = []
+        jd_starts = matching_jds[::2]
+        jd_ends = matching_jds[1::2]
+        for i in range(jd_starts.size):
+            jd_start = jd_starts[i]
+            jd_end = jd_ends[i]
+            matches.append({'jd_start':jd_start, 'jd_end':jd_end,
+                'angle_start': angle_at_jd(jd_start),
+                'angle_end': angle_at_jd(jd_end)});
 
-        def pair_means(a):
-            odds = a[::2]
-            evens = a[1::2]
-            return np.vectorize(lambda x,y: (x+y)/2)(odds,evens)
-        jd_means = pair_means(matching_jds)
-        angle_means = pair_means(matching_angles)
-        #print(jd_means, angle_means)
+        def match_mean(match):
+            jd_mean = (match['jd_start'] + match['jd_end']) / 2
+            angle_mean = (match['angle_start'] + match['angle_end']) / 2
+            return {'jd': jd_mean, 'angle': angle_mean}
 
+        refined_matches = []
         if passes:
-            # FIXME; need more than just the first pair
-            result = self.angles_to_planet_within_period(planet, target_angle, matching_jds[0],
-                    matching_jds[1], sample_interval*(1/30), passes-1)
-            if result is None:
-                return jd_means.tolist()
-            else:
-                return result
+            for match in matches:
+                result = self.angles_to_planet_within_period(planet,
+                        target_angle, match['jd_start'], match['jd_end'],
+                        sample_interval*(1/1000), passes-1)
+                if result:
+                    refined_matches += result
+                else:
+                    #print('Notice: stopping angle finder with %d passes remaining.' % passes)
+                    refined_matches.append(match_mean(match))
         else:
-            return jd_means.tolist()
+            for match in matches:
+                refined_matches.append(match_mean(match))
 
+        return refined_matches
+
+    def next_sign_change(self, jd=jd_now()):
+        # TODO
+        return jd
+
+    def time_left_in_sign(self, jd=jd_now()):
+        # TODO
+        return jd
 
 class Moon(Planet):
     def __init__(self):
@@ -137,69 +166,125 @@ class Moon(Planet):
             quarter_english = ["new", "first quarter", "full", "third quarter"][quarter]
 
         if 0 < angle < 90:
-            phase = "waxing crescent"
+            trend = 'waxing'
+            shape = 'crescent'
         elif 90 <= angle < 180:
-            phase = "waxing gibbous"
+            trend = 'waxing'
+            shape = 'gibbous'
         elif 190 <= angle < 270:
-            phase = "waning gibbous"
+            trend = 'waning'
+            shape = 'gibbous'
         else:
-            phase = "waning crescent"
+            trend = 'waning'
+            shape = 'crescent'
 
-        return (phase, quarter, quarter_english)
+        MoonPhaseData = collections.namedtuple('MoonPhaseData',
+                ['trend', 'shape', 'quarter', 'quarter_english'])
+        return MoonPhaseData._make([trend, shape, quarter, quarter_english])
 
     def next_new_moon(self, jd=jd_now()):
+        """
+        >>> math.floor(Moon().next_new_moon(2456720.24305)[0])
+        2456747
+        """
         sun = Planet(sweph.SUN)
-        return self.next_angle_to_planet(sun, 0, jd)
+        next_angle_jd, delta_jd = self.next_angle_to_planet(sun, 0, jd)
+        return self.Timespec._make([next_angle_jd, delta_jd])
 
-    def next_full_moon(self, jd=jd_now()):
+    def next_full_moon(self, jd=jd_now(), as_dict=False):
         sun = Planet(sweph.SUN)
-        return self.next_angle_to_planet(sun, 180, jd)
+        next_angle_jd, delta_jd = self.next_angle_to_planet(sun, 180, jd)
+        return self.Timespec._make([next_angle_jd, delta_jd])
+
+    def is_void_of_course(self, jd=jd_now()):
+        """Whether the moon is void of course at a certain point in time.
+        Returns a tuple (boolean, float) indicating whether it is void
+        of course and up to which point in time."""
+        return (False, jd) # TODO
 
 def format_jd(jd):
+    """Convert jd into a UTC string representation"""
     year, month, day, hour_frac = sweph.revjul(jd)
-    hours = math.floor(hour_frac)
-    minutes = (hour_frac % 1) * 60
-    return "%d-%d-%d %d:%d" % (year, month, day, hours, minutes)
+    _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
+    time_ = time.mktime((year,month,day,hours,minutes,seconds,0,0,0))
+    return time.asctime(time.localtime(time_))
 
-def days_frac_to_dhm(days_frac):
+def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours and minutes.
 
     Returns a tuple (days, hours, minutes).
     
-    >>> days_frac_to_dhm(2.53)
-    (2, 12, 43)
+    >>> days_frac_to_dhms(2.5305)
+    (2, 12, 43, 55)
     """
     days = math.floor(days_frac)
-    hours_minutes_frac = days_frac - days
-    hours = math.floor(hours_minutes_frac * 24)
-    minutes_frac = hours_minutes_frac - hours / 24
+    hms_frac = days_frac - days
+    hours = math.floor(hms_frac * 24)
+    minutes_frac = hms_frac - hours / 24
     minutes = math.floor(minutes_frac * 1440)
+    seconds = math.floor((minutes_frac - minutes / 1440) * 86400)
 
-    return (days, hours, minutes)
-
+    return (days, hours, minutes, seconds)
 
 if __name__ == '__main__':
     import doctest
     doctest.testmod()
 
-    print(time.asctime())
-    print(format_jd(jd_now()))
+    result = collections.OrderedDict()
+
+    result['jd'] = jd_now()
+    result['utc'] = format_jd(jd_now())
+    result['localtime'] = time.asctime()
 
     moon = Moon()
-    sign, deg, minutes, long = moon.position()
-    print('%s: %.2f %d %s %d\'' % (moon.name(), long, deg, sign, minutes))
+    result['moon'] = moon.position()
 
     sun = Planet(sweph.SUN)
-    sign, deg, minutes, long = sun.position()
-    print('%s: %.2f %d %s %d\'' % (sun.name(), long, deg, sign, minutes))
+    result['sun'] = sun.position()
 
-    phase, quarter, quarter_english = moon.phase()
-    print("phase: %s, quarter: %s, illum: %d%%" % (phase, quarter_english, moon.illumination() * 100))
-    next_new_moon_jd, next_new_moon_jd_delta = moon.next_new_moon()
-    print("next new moon: in %d days XX hours (%s)" % (next_new_moon_jd_delta, format_jd(next_new_moon_jd)))
-    next_full_moon_jd, next_full_moon_jd_delta = moon.next_full_moon()
-    print("next full moon: in %d days XX hours (%s)" % (next_full_moon_jd_delta, format_jd(next_full_moon_jd)))
+    result['phase'] = moon.phase()
+    result['illumination'] = moon.illumination()
+    result['next_new_moon'] = moon.next_new_moon()
+    result['next_full_moon'] = moon.next_full_moon()
 
-# sign degrees minutes illumination waxing/waning gibbous/crescent next_new next_full last_new last_full size distance folk name
-# age moon name distance diameter angle to sun
+    def emit_text(result):
+        print('Julian day:', result['jd'])
+        print('Universal time (UTC):', result['utc'])
+        print('Local time:', result['localtime'])
+
+        sign, deg, minutes = result['moon'][:3]
+        print('%s: %d %s %d\'' % (moon.name(), deg, sign[:3], minutes))
+
+        sign, deg, minutes = result['sun'][:3]
+        print('%s: %d %s %d\'' % (sun.name(), deg, sign[:3], minutes))
+
+        trend, shape, quarter, quarter_english = result['phase']
+        phase = trend + ' ' + shape
+        print("phase: %s, quarter: %s, illum: %d%%" %
+                (phase, quarter_english, result['illumination'] * 100))
+
+        next_new_moon_jd, next_new_moon_jd_delta = result['next_new_moon']
+        days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
+        print("next new moon: in %d days %d hours (%s)" %
+                (days, hours, format_jd(next_new_moon_jd)))
+
+        next_full_moon_jd, next_full_moon_jd_delta = result['next_full_moon']
+        days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
+        print("next full moon: in %d days %d hours (%s)" %
+                (days, hours, format_jd(next_full_moon_jd)))
+
+    def emit_json(result):
+        # Note: simplejson treats namedtuples as dicts by default but this is
+        # one dep less.
+        for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
+            result[field] = result[field]._asdict()
+        import json
+        print(json.dumps(result, indent=8))
+
+    emit_text(result);
+    emit_json(result);
+
+
+# VERSION 1: status (exalted etc.), diameter, distance, age
+# LATER: last_new last_full folk name period_length, lunation_number
 
