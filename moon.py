@@ -55,8 +55,9 @@ class Planet:
         speed = self.speed(jd)
         return speed < 0
 
-    def is_stationing(self, jd=jd_now()):
-        speed = self.speed(jd)
+    def is_stationing(self):
+        # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
+        speed = self.speed()
         return math.fabs(speed) < 0.2
 
     def angle(self, planet, jd=jd_now()):
@@ -90,7 +91,9 @@ class Planet:
         assert(target_angle<360)
         if sample_interval == "auto":
             sample_interval = 1/4 # days
-        #print('atpwp: start=%f, end=%f, interval=%f, sample_pass=%d' % (jd_start, jd_end, sample_interval, passes))
+        if False:
+            print('atpwp: start=%f, end=%f, interval=%f, sample_pass=%d'
+                    % (jd_start, jd_end, sample_interval, passes))
         jds = np.arange(jd_start, jd_end, sample_interval)
         def angle_at_jd(d):
             return self.angle(planet, d)
@@ -142,6 +145,10 @@ class Planet:
     def time_left_in_sign(self, jd=jd_now()):
         # TODO
         return jd
+
+class Sun(Planet):
+    def __init__(self):
+        super(Sun, self).__init__(sweph.SUN)
 
 class Moon(Planet):
     def __init__(self):
@@ -200,7 +207,13 @@ class Moon(Planet):
         """Whether the moon is void of course at a certain point in time.
         Returns a tuple (boolean, float) indicating whether it is void
         of course and up to which point in time."""
+        raise NotImplementedError
         return (False, jd) # TODO
+
+    def lunation_number(self):
+        # TODO http://en.wikipedia.org/wiki/Lunation_Number
+        raise NotImplementedError
+        return 0
 
 def format_jd(jd):
     """Convert jd into a UTC string representation"""
@@ -239,7 +252,7 @@ if __name__ == '__main__':
     moon = Moon()
     result['moon'] = moon.position()
 
-    sun = Planet(sweph.SUN)
+    sun = Sun()
     result['sun'] = sun.position()
 
     result['phase'] = moon.phase()
