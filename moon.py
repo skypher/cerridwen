@@ -216,11 +216,11 @@ class Moon(Planet):
         return 0
 
 def format_jd(jd):
-    """Convert jd into a UTC string representation"""
+    """Convert jd into an ISO 8601 string representation"""
     year, month, day, hour_frac = sweph.revjul(jd)
     _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
     time_ = time.mktime((year,month,day,hours,minutes,seconds,0,0,0))
-    return time.asctime(time.localtime(time_))
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.localtime(time_))
 
 def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours and minutes.
@@ -247,7 +247,6 @@ if __name__ == '__main__':
 
     result['jd'] = jd_now()
     result['utc'] = format_jd(jd_now())
-    result['localtime'] = time.asctime()
 
     moon = Moon()
     result['moon'] = moon.position()
@@ -263,7 +262,7 @@ if __name__ == '__main__':
     def emit_text(result):
         print('Julian day:', result['jd'])
         print('Universal time (UTC):', result['utc'])
-        print('Local time:', result['localtime'])
+        print('Local time:', time.asctime())
 
         sign, deg, minutes = result['moon'][:3]
         print('%s: %d %s %d\'' % (moon.name(), deg, sign[:3], minutes))
@@ -291,6 +290,8 @@ if __name__ == '__main__':
         # one dep less.
         for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
             result[field] = result[field]._asdict()
+        result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
+        result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
         import json
         print(json.dumps(result, indent=8))
 
