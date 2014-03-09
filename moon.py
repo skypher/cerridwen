@@ -219,8 +219,8 @@ def format_jd(jd):
     """Convert jd into an ISO 8601 string representation"""
     year, month, day, hour_frac = sweph.revjul(jd)
     _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
-    time_ = time.mktime((year,month,day,hours,minutes,seconds,0,0,0))
-    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.localtime(time_))
+    time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time_))
 
 def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours and minutes.
