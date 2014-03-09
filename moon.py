@@ -5,11 +5,15 @@
 # terminology note: "planet" is used in the astrological sense, i.e.
 # also for the sun, moon and asteroids.
 
+debug_angle_finder = 0
+
 import swisseph as sweph
 import time, calendar
 import math
 import numpy as np
 import collections
+
+import sys
 
 sweph.set_ephe_path('/home/sky/eph/sweph')
 
@@ -30,8 +34,8 @@ class Planet:
         self.id = planet_id
         self.Position = collections.namedtuple('Position',
                 ['sign', 'degrees', 'minutes', 'absolute_degrees'])
-        self.Timespec = collections.namedtuple('Timespec',
-                ['jd', 'delta_jd'])
+        self.AngleTime = collections.namedtuple('AngleTime',
+                ['jd', 'delta_jd', 'angle_diff'])
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -78,22 +82,25 @@ class Planet:
         # TODO: honor orb
         assert(target_angle<360)
         if lookahead == "auto":
-            lookahead = 80 # days
+            lookahead = 34 # days
         next_angles = self.angles_to_planet_within_period(planet, target_angle, jd, jd+lookahead)
         if next_angles:
             next_angle_jd = next_angles[0]['jd']
             delta_jd = next_angle_jd - jd
-            return (next_angle_jd, delta_jd)
+            angle_diff = math.fabs(target_angle - next_angles[0]['angle']) % 360
+            assert(angle_diff < 0.001)
+            return (next_angle_jd, delta_jd, angle_diff)
         else:
             return None
 
     def angles_to_planet_within_period(self, planet, target_angle, jd_start, jd_end, sample_interval="auto", passes=6):
         assert(target_angle<360)
         if sample_interval == "auto":
-            sample_interval = 1/4 # days
-        if False:
-            print('atpwp: start=%f, end=%f, interval=%f, sample_pass=%d'
-                    % (jd_start, jd_end, sample_interval, passes))
+            sample_interval = 1/20 # days
+        if debug_angle_finder:
+            print('atpwp (:=%f deg): start=%f (%s), end=%f (%s), interval=%f, sample_pass=%d'
+                    % (target_angle, jd_start, format_jd(jd_start), jd_end, format_jd(jd_end),
+                        sample_interval, passes))
         jds = np.arange(jd_start, jd_end, sample_interval)
         def angle_at_jd(d):
             return self.angle(planet, d)
@@ -112,9 +119,12 @@ class Planet:
         for i in range(jd_starts.size):
             jd_start = jd_starts[i]
             jd_end = jd_ends[i]
-            matches.append({'jd_start':jd_start, 'jd_end':jd_end,
-                'angle_start': angle_at_jd(jd_start),
-                'angle_end': angle_at_jd(jd_end)});
+            match = {'jd_start':jd_start, 'jd_end':jd_end,
+                     'angle_start': angle_at_jd(jd_start),
+                     'angle_end': angle_at_jd(jd_end)}
+            if debug_angle_finder:
+                print('match:', match)
+            matches.append(match);
 
         def match_mean(match):
             jd_mean = (match['jd_start'] + match['jd_end']) / 2
@@ -126,11 +136,12 @@ class Planet:
             for match in matches:
                 result = self.angles_to_planet_within_period(planet,
                         target_angle, match['jd_start'], match['jd_end'],
-                        sample_interval*(1/1000), passes-1)
+                        sample_interval*(1/100), passes-1)
                 if result:
                     refined_matches += result
                 else:
-                    #print('Notice: stopping angle finder with %d passes remaining.' % passes)
+                    if debug_angle_finder:
+                        print('Notice: stopping angle finder with %d passes remaining.' % passes)
                     refined_matches.append(match_mean(match))
         else:
             for match in matches:
@@ -195,13 +206,13 @@ class Moon(Planet):
         2456747
         """
         sun = Planet(sweph.SUN)
-        next_angle_jd, delta_jd = self.next_angle_to_planet(sun, 0, jd)
-        return self.Timespec._make([next_angle_jd, delta_jd])
+        next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
+        return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
     def next_full_moon(self, jd=jd_now(), as_dict=False):
         sun = Planet(sweph.SUN)
-        next_angle_jd, delta_jd = self.next_angle_to_planet(sun, 180, jd)
-        return self.Timespec._make([next_angle_jd, delta_jd])
+        next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
+        return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
     def is_void_of_course(self, jd=jd_now()):
         """Whether the moon is void of course at a certain point in time.
@@ -240,6 +251,12 @@ def days_frac_to_dhms(days_frac):
     return (days, hours, minutes, seconds)
 
 if __name__ == '__main__':
+    if debug_angle_finder:
+        moon = Moon()
+        print(format_jd(moon.next_full_moon()[0]))
+        print(format_jd(moon.next_new_moon()[0]))
+        sys.exit(1)
+
     import doctest
     doctest.testmod()
 
@@ -275,15 +292,15 @@ if __name__ == '__main__':
         print("phase: %s, quarter: %s, illum: %d%%" %
                 (phase, quarter_english, result['illumination'] * 100))
 
-        next_new_moon_jd, next_new_moon_jd_delta = result['next_new_moon']
+        next_new_moon_jd, next_new_moon_jd_delta, angle_diff = result['next_new_moon']
         days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
-        print("next new moon: in %d days %d hours (%s)" %
-                (days, hours, format_jd(next_new_moon_jd)))
+        print("next new moon: in %d days %d hours (%s), %fdeg exact" %
+                (days, hours, format_jd(next_new_moon_jd), angle_diff))
 
-        next_full_moon_jd, next_full_moon_jd_delta = result['next_full_moon']
+        next_full_moon_jd, next_full_moon_jd_delta, angle_diff = result['next_full_moon']
         days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
-        print("next full moon: in %d days %d hours (%s)" %
-                (days, hours, format_jd(next_full_moon_jd)))
+        print("next full moon: in %d days %d hours (%s), %fdeg exact" %
+                (days, hours, format_jd(next_full_moon_jd), angle_diff))
 
     def emit_json(result):
         # Note: simplejson treats namedtuples as dicts by default but this is
