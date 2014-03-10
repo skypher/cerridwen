@@ -82,7 +82,7 @@ class Planet:
         speed = self.speed(jd)
         return speed < 0
 
-    def is_stationing(self):
+    def is_stationing(self, jd=jd_now()):
         # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
         speed = self.speed()
         return math.fabs(speed) < 0.2
@@ -121,16 +121,20 @@ class Planet:
         if sample_interval == "auto":
             sample_interval = 1/20 # days
         if debug_angle_finder:
-            print('atpwp (:=%f deg): start=%f (%s), end=%f (%s), interval=%f, sample_pass=%d'
-                    % (target_angle, jd_start, format_jd(jd_start), jd_end, format_jd(jd_end),
-                        sample_interval, passes))
+            print('atpwp (:=%d deg): start=%f (%s), end=%f (%s), interval=%f, '
+                  'sample_pass=%d'
+                  % (target_angle, jd_start, format_jd(jd_start), jd_end,
+                     format_jd(jd_end), sample_interval, passes))
         jds = np.arange(jd_start, jd_end, sample_interval)
         def angle_at_jd(d):
             return self.angle(planet, d)
         angle_at_jd_v = np.vectorize(angle_at_jd)
         angles = angle_at_jd_v(jds)
+        if debug_angle_finder:
+            print("The angles:",angles[0], angles[-1])
         target_adjusted_angles = (angles - target_angle) % 360
-        sign_changes = np.roll(np.diff(np.sign(np.diff(target_adjusted_angles))) != 0, 1)
+        gradient_signs = np.sign(np.diff(target_adjusted_angles))
+        sign_changes = np.roll(np.diff(gradient_signs) != 0, 1)
         matching_jds = jds[sign_changes]
 
         if matching_jds.size < 2:
@@ -164,7 +168,8 @@ class Planet:
                     refined_matches += result
                 else:
                     if debug_angle_finder:
-                        print('Notice: stopping angle finder with %d passes remaining.' % passes)
+                        print('Notice: stopping angle finder with %d passes '
+                              'remaining.' % (passes-1))
                     refined_matches.append(match_mean(match))
         else:
             for match in matches:
@@ -194,7 +199,7 @@ class Moon(Planet):
     def dignity(self, jd=jd_now()):
         sign = self.sign(jd)
         if sign == 'Cancer':
-            return 'domicile'
+            return 'rulership'
         elif sign == 'Taurus':
             return 'exaltation'
         elif sign == 'Capricorn':
@@ -203,6 +208,14 @@ class Moon(Planet):
             return 'fall'
         else:
             return None
+
+    def age(self, jd=jd_now()):
+        raise NotImplementedError
+        #return jd - jd_last_new_moon
+
+    def period_length(self, jd=jd_now()):
+        raise NotImplementedError
+        #return jd_next_new_moon - jd_last_new_moon
 
     def phase(self, jd=jd_now()):
         sun = Planet(sweph.SUN)
@@ -220,7 +233,8 @@ class Moon(Planet):
             quarter = 3
 
         if quarter is not None:
-            quarter_english = ["new", "first quarter", "full", "third quarter"][quarter]
+            quarter_names = ["new", "first quarter", "full", "third quarter"]
+            quarter_english = quarter_names[quarter]
 
         if 0 < angle < 90:
             trend = 'waxing'
@@ -290,14 +304,20 @@ def days_frac_to_dhms(days_frac):
     return (days, hours, minutes, seconds)
 
 if __name__ == '__main__':
-    if debug_angle_finder:
-        moon = Moon()
-        print(format_jd(moon.next_full_moon()[0]))
-        print(format_jd(moon.next_new_moon()[0]))
-        sys.exit(1)
-
+    print('Running basic sanity tests.')
     import doctest
     doctest.testmod()
+    print('Done.')
+
+    if debug_angle_finder:
+        for i in range(1,100):
+            moon = Moon()
+            jd = jd_now()+i*30
+            new = moon.next_new_moon(jd)
+            full = moon.next_full_moon(jd)
+            print(format_jd(new[0]), new[2])
+            print(format_jd(full[0]), full[2])
+        sys.exit(1)
 
     result = collections.OrderedDict()
 
@@ -360,6 +380,12 @@ if __name__ == '__main__':
     emit_json(result);
 
 
-# VERSION 1: diameter, age
-# LATER: last_new last_full folk name period_length lunation_number
+# v1.1.0
+# use new/full moon tables
+# jd should be part of the Planet instance
+ 
+# LATER
+# last_new last_full folk_names moon_in_year age period_length
+# lunation_number
+
 
