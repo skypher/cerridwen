@@ -24,6 +24,18 @@ def jd_now():
                         gmtime.tm_mday,
                         gmtime.tm_hour+((gmtime.tm_min * 100 / 60) / 100))
 
+def mod360_fabs(a, b):
+    """fabs for a,b in mod(360)"""
+    # Surprisingly enough there doesn't seem to be a more elegant way.
+    # Check http://stackoverflow.com/questions/6192825/
+    a %= 360
+    b %= 360
+
+    if a < b:
+        return mod360_fabs(b, a)
+    else:
+        return min(a-b, b-a+360)
+
 signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
          'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'];
 
@@ -87,8 +99,8 @@ class Planet:
         if next_angles:
             next_angle_jd = next_angles[0]['jd']
             delta_jd = next_angle_jd - jd
-            angle_diff = math.fabs(target_angle - next_angles[0]['angle']) % 360
-            assert(angle_diff < 0.001)
+            angle_diff = mod360_fabs(target_angle, next_angles[0]['angle'])
+            assert(angle_diff < 0.0001)
             return (next_angle_jd, delta_jd, angle_diff)
         else:
             return None
