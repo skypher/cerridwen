@@ -140,8 +140,8 @@ class Planet:
 
         def match_mean(match):
             jd_mean = (match['jd_start'] + match['jd_end']) / 2
-            angle_mean = ((match['angle_start'] + match['angle_end']) % 360) / 2
-            return {'jd': jd_mean, 'angle': angle_mean}
+            angle_mean = angle_at_jd(jd_mean)
+            return {'jd': jd_mean, 'angle': angle_at_jd(jd_mean)}
 
         refined_matches = []
         if passes:
