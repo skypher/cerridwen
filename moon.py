@@ -7,6 +7,8 @@
 
 debug_angle_finder = 0
 
+maximum_angle_distance = 1e-6 # our guaranteed precision
+
 import swisseph as sweph
 import time, calendar
 import math
@@ -111,12 +113,14 @@ class Planet:
             next_angle_jd = next_angles[0]['jd']
             delta_jd = next_angle_jd - jd
             angle_diff = mod360_fabs(target_angle, next_angles[0]['angle'])
-            assert(angle_diff < 0.0001)
+            assert angle_diff <= maximum_angle_distance, (target_angle, next_angles[0]['angle'], angle_diff)
             return (next_angle_jd, delta_jd, angle_diff)
         else:
             return None
 
-    def angles_to_planet_within_period(self, planet, target_angle, jd_start, jd_end, sample_interval="auto", passes=6):
+    def angles_to_planet_within_period(self, planet, target_angle, jd_start,
+                                       jd_end, sample_interval="auto",
+                                       passes=10):
         assert(target_angle<360)
         if sample_interval == "auto":
             sample_interval = 1/20 # days
@@ -156,14 +160,19 @@ class Planet:
         def match_mean(match):
             jd_mean = (match['jd_start'] + match['jd_end']) / 2
             angle_mean = angle_at_jd(jd_mean)
+            #print(match,angle_mean)
             return {'jd': jd_mean, 'angle': angle_at_jd(jd_mean)}
 
         refined_matches = []
         if passes:
             for match in matches:
+                new_sample_interval = sample_interval * (1/1000)
                 result = self.angles_to_planet_within_period(planet,
-                        target_angle, match['jd_start'], match['jd_end'],
-                        sample_interval*(1/100), passes-1)
+                        target_angle,
+                        match['jd_start']-new_sample_interval*1000,
+                        match['jd_end']+new_sample_interval*1000,
+                        new_sample_interval,
+                        passes-1)
                 if result:
                     refined_matches += result
                 else:
