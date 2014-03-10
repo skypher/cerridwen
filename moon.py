@@ -107,7 +107,7 @@ class Planet:
         # TODO: honor orb
         assert(target_angle<360)
         if lookahead == "auto":
-            lookahead = 34 # days
+            lookahead = 40 # days
         next_angles = self.angles_to_planet_within_period(planet, target_angle, jd, jd+lookahead)
         if next_angles:
             next_angle_jd = next_angles[0]['jd']
@@ -120,7 +120,7 @@ class Planet:
 
     def angles_to_planet_within_period(self, planet, target_angle, jd_start,
                                        jd_end, sample_interval="auto",
-                                       passes=10):
+                                       passes=8):
         assert(target_angle<360)
         if sample_interval == "auto":
             sample_interval = 1/20 # days
@@ -147,7 +147,10 @@ class Planet:
         matches = []
         jd_starts = matching_jds[::2]
         jd_ends = matching_jds[1::2]
-        for i in range(jd_starts.size):
+        # sometimes we have an odd number of sign changes;
+        # in that case just ignore the last one.
+        start_end_pairs = min(jd_starts.size, jd_ends.size)
+        for i in range(start_end_pairs):
             jd_start = jd_starts[i]
             jd_end = jd_ends[i]
             match = {'jd_start':jd_start, 'jd_end':jd_end,
@@ -166,11 +169,11 @@ class Planet:
         refined_matches = []
         if passes:
             for match in matches:
-                new_sample_interval = sample_interval * (1/1000)
+                new_sample_interval = sample_interval * (1/100)
                 result = self.angles_to_planet_within_period(planet,
                         target_angle,
-                        match['jd_start']-new_sample_interval*1000,
-                        match['jd_end']+new_sample_interval*1000,
+                        match['jd_start']-new_sample_interval*100,
+                        match['jd_end']+new_sample_interval*100,
                         new_sample_interval,
                         passes-1)
                 if result:
