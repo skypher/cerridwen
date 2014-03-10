@@ -52,9 +52,17 @@ class Planet:
     def name(self):
         return sweph.get_planet_name(self.id)
 
+    def diameter(self, jd=jd_now()):
+        """The apparent diameter of the planet, in arc minutes."""
+        return sweph.pheno_ut(jd, self.id)[3] * 60
+
     def longitude(self, jd=jd_now()):
         long = sweph.calc_ut(jd, self.id)[0]
         return long
+
+    def distance(self, jd=jd_now()):
+        distance = sweph.calc_ut(jd, self.id)[2]
+        return distance
 
     def position(self, jd=jd_now()):
         long = sweph.calc_ut(jd, self.id)[0]
@@ -62,6 +70,9 @@ class Planet:
         reldeg = long % 30.0
         minutes = ((reldeg % 1) * 100) * 60 / 100
         return self.Position._make([sign, reldeg, minutes, long])
+
+    def sign(self, jd=jd_now()):
+        return self.position(jd)[0]
 
     def speed(self, jd=jd_now()):
         speed = sweph.calc_ut(jd, self.id)[3]
@@ -177,6 +188,22 @@ class Moon(Planet):
     def __init__(self):
         super(Moon, self).__init__(sweph.MOON)
 
+    def diameter_ratio(self, jd=jd_now()):
+        return (self.diameter(jd) - 29.3) / 4.8
+
+    def dignity(self, jd=jd_now()):
+        sign = self.sign(jd)
+        if sign == 'Cancer':
+            return 'domicile'
+        elif sign == 'Taurus':
+            return 'exaltation'
+        elif sign == 'Capricorn':
+            return 'detriment'
+        elif sign == 'Scorpio':
+            return 'fall'
+        else:
+            return None
+
     def phase(self, jd=jd_now()):
         sun = Planet(sweph.SUN)
         angle = self.angle(sun, jd)
@@ -285,8 +312,13 @@ if __name__ == '__main__':
 
     result['phase'] = moon.phase()
     result['illumination'] = moon.illumination()
+    result['distance'] = moon.distance()
+    result['diameter'] = moon.diameter()
+    result['diameter_ratio'] = moon.diameter_ratio()
     result['next_new_moon'] = moon.next_new_moon()
     result['next_full_moon'] = moon.next_full_moon()
+
+    result['dignity'] = moon.dignity()
 
     def emit_text(result):
         print('Julian day:', result['jd'])
@@ -328,6 +360,6 @@ if __name__ == '__main__':
     emit_json(result);
 
 
-# VERSION 1: status (exalted etc.), diameter, distance, age
-# LATER: last_new last_full folk name period_length, lunation_number
+# VERSION 1: diameter, age
+# LATER: last_new last_full folk name period_length lunation_number
 
