@@ -86,6 +86,7 @@ class Planet:
 
     def is_stationing(self, jd=jd_now()):
         # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
+        # TODO: this is for Mercury, what about other planets?
         speed = self.speed()
         return math.fabs(speed) < 0.2
 
@@ -95,6 +96,18 @@ class Planet:
     def illumination(self, jd=jd_now()):
         sun = Planet(sweph.SUN)
         return self.angle(sun, jd) / 360.0
+
+    def last_rise(self):
+        raise NotImplementedError
+
+    def next_rise(self):
+        raise NotImplementedError
+
+    def last_set(self):
+        raise NotImplementedError
+
+    def next_set(self):
+        raise NotImplementedError
 
     def next_angle_to_planet(self, planet, target_angle, jd=jd_now(),
                              orb="auto", lookahead="auto"):
@@ -205,10 +218,16 @@ class Moon(Planet):
     def __init__(self):
         super(Moon, self).__init__(sweph.MOON)
 
+    def speed_ratio(self, jd=jd_now()):
+        # 11.6deg/d to 14.8deg/d
+        return (self.speed(jd) - 11.6) / 3.2
+
     def diameter_ratio(self, jd=jd_now()):
+        # 29.3' to 34.1'
         return (self.diameter(jd) - 29.3) / 4.8
 
     def dignity(self, jd=jd_now()):
+        """Return the dignity of the planet at jd, or None."""
         sign = self.sign(jd)
         if sign == 'Cancer':
             return 'rulership'
@@ -434,13 +453,18 @@ if __name__ == '__main__':
         emit_json(result);
 
 
+# v1
+# rise, set (angle 0 to ac) -- last and next
 
 # v1.1.0
+# last_new/last_full
 # use new/full moon tables
 # jd should be part of the Planet instance
  
 # LATER
+# latitude: when within band of the sun (David)
 # last_new last_full folk_names moon_in_year age period_length
 # lunation_number
 
-
+# for diameter ratio see the numbers here:
+# http://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
