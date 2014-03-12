@@ -412,17 +412,20 @@ def generate_moon_tables():
     # repeat all this for full moon
 
 def start_api_server():
-    import waitress
+    import flask
+    app = flask.Flask(__name__)
 
-    def application(env, start_response):
-        status = '200 OK'
-        response_headers = [("Content-type", "text/json")]
-        start_response(status, response_headers)
+    @app.route("/")
+    def application():
+        status = 200
         result = emit_json(build_result_dict())
         #print('result: ',result,type(result))
-        return [bytes(result, 'utf-8')]
+        response = flask.make_response(result, status)
+        response.headers['Content-type'] = 'text/json'
+        return response
 
-    waitress.serve(application, port=8080)
+    app.debug = True
+    app.run()
 
 
 if __name__ == '__main__':
