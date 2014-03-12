@@ -315,81 +315,124 @@ def days_frac_to_dhms(days_frac):
 
     return (days, hours, minutes, seconds)
 
+def build_result_dict(jd=jd_now()):
+    result = collections.OrderedDict()
+
+    result['jd'] = jd
+    result['utc'] = format_jd(jd)
+
+    moon = Moon()
+    result['moon'] = moon.position(jd)
+
+    sun = Sun()
+    result['sun'] = sun.position(jd)
+
+    result['phase'] = moon.phase(jd)
+    result['illumination'] = moon.illumination(jd)
+    result['distance'] = moon.distance(jd)
+    result['diameter'] = moon.diameter(jd)
+    result['diameter_ratio'] = moon.diameter_ratio(jd)
+    result['speed'] = moon.speed(jd)
+    result['speed_ratio'] = moon.speed_ratio(jd)
+    result['next_new_moon'] = moon.next_new_moon(jd)
+    result['next_full_moon'] = moon.next_full_moon(jd)
+
+    result['dignity'] = moon.dignity(jd)
+
+    return result
+
+
+def emit_text(result):
+    # TODO build string and return
+    print('Julian day:', result['jd'])
+    print('Universal time (UTC):', result['utc'])
+    print('Local time:', time.asctime())
+
+    sign, deg, minutes = result['moon'][:3]
+    print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
+
+    sign, deg, minutes = result['sun'][:3]
+    print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
+
+    trend, shape, quarter, quarter_english = result['phase']
+    phase = trend + ' ' + shape
+    print("phase: %s, quarter: %s, illum: %d%%" %
+            (phase, quarter_english, result['illumination'] * 100))
+
+    next_new_moon_jd, next_new_moon_jd_delta, angle_diff = result['next_new_moon']
+    days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
+    print("next new moon: in %d days %d hours (%s), %fdeg exact" %
+            (days, hours, format_jd(next_new_moon_jd), angle_diff))
+
+    next_full_moon_jd, next_full_moon_jd_delta, angle_diff = result['next_full_moon']
+    days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
+    print("next full moon: in %d days %d hours (%s), %fdeg exact" %
+            (days, hours, format_jd(next_full_moon_jd), angle_diff))
+
+def emit_json(result):
+    # Note: simplejson treats namedtuples as dicts by default but this is
+    # one dep less.
+    for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
+        result[field] = result[field]._asdict()
+    result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
+    result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
+    import json
+    return json.dumps(result, indent=8)
+
+def generate_moon_tables():
+    raise NotImplementedError
+
+    import sqlite3
+    conn = sqlite3.connect('moon.db')
+
+    moon = Moon()
+    # idea sketch: start with previous new moon
+    # then go further back, finding all new
+    # moons up to a certain date in the past.
+    # repeat for the future
+    # repeat all this for full moon
+
+def start_api_server():
+    import waitress
+
+    def application(env, start_response):
+        status = '200 OK'
+        response_headers = [("Content-type", "text/json")]
+        start_response(status, response_headers)
+        result = emit_json(build_result_dict())
+        #print('result: ',result,type(result))
+        return [bytes(result, 'utf-8')]
+
+    waitress.serve(application, port=8080)
+
+
 if __name__ == '__main__':
+    server = True
+
     print('Running basic sanity tests.')
     import doctest
     doctest.testmod()
     print('Done.')
 
-    if debug_angle_finder:
-        for i in range(1,100):
-            moon = Moon()
-            jd = jd_now()+i*30
-            new = moon.next_new_moon(jd)
-            full = moon.next_full_moon(jd)
-            print(format_jd(new[0]), new[2])
-            print(format_jd(full[0]), full[2])
-        sys.exit(1)
+    if server:
+        print('Starting API server.')
+        start_api_server()
+    else:
+        if debug_angle_finder:
+            for i in range(1,100):
+                moon = Moon()
+                jd = jd_now()+i*30
+                new = moon.next_new_moon(jd)
+                full = moon.next_full_moon(jd)
+                print(format_jd(new[0]), new[2])
+                print(format_jd(full[0]), full[2])
+            sys.exit(1)
 
-    result = collections.OrderedDict()
+        result = build_result_dict()
 
-    result['jd'] = jd_now()
-    result['utc'] = format_jd(jd_now())
+        emit_text(result);
+        emit_json(result);
 
-    moon = Moon()
-    result['moon'] = moon.position()
-
-    sun = Sun()
-    result['sun'] = sun.position()
-
-    result['phase'] = moon.phase()
-    result['illumination'] = moon.illumination()
-    result['distance'] = moon.distance()
-    result['diameter'] = moon.diameter()
-    result['diameter_ratio'] = moon.diameter_ratio()
-    result['next_new_moon'] = moon.next_new_moon()
-    result['next_full_moon'] = moon.next_full_moon()
-
-    result['dignity'] = moon.dignity()
-
-    def emit_text(result):
-        print('Julian day:', result['jd'])
-        print('Universal time (UTC):', result['utc'])
-        print('Local time:', time.asctime())
-
-        sign, deg, minutes = result['moon'][:3]
-        print('%s: %d %s %d\'' % (moon.name(), deg, sign[:3], minutes))
-
-        sign, deg, minutes = result['sun'][:3]
-        print('%s: %d %s %d\'' % (sun.name(), deg, sign[:3], minutes))
-
-        trend, shape, quarter, quarter_english = result['phase']
-        phase = trend + ' ' + shape
-        print("phase: %s, quarter: %s, illum: %d%%" %
-                (phase, quarter_english, result['illumination'] * 100))
-
-        next_new_moon_jd, next_new_moon_jd_delta, angle_diff = result['next_new_moon']
-        days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
-        print("next new moon: in %d days %d hours (%s), %fdeg exact" %
-                (days, hours, format_jd(next_new_moon_jd), angle_diff))
-
-        next_full_moon_jd, next_full_moon_jd_delta, angle_diff = result['next_full_moon']
-        days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
-        print("next full moon: in %d days %d hours (%s), %fdeg exact" %
-                (days, hours, format_jd(next_full_moon_jd), angle_diff))
-
-    def emit_json(result):
-        # Note: simplejson treats namedtuples as dicts by default but this is
-        # one dep less.
-        for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
-            result[field] = result[field]._asdict()
-        result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
-        result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
-        import json
-        print(json.dumps(result, indent=8))
-
-    emit_text(result);
-    emit_json(result);
 
 
 # v1.1.0
