@@ -95,7 +95,8 @@ class Planet:
 
     def illumination(self, jd=jd_now()):
         sun = Planet(sweph.SUN)
-        return self.angle(sun, jd) / 360.0
+        print(mod360_fabs(self.angle(sun, jd), 180))
+        return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
 
     def last_rise(self):
         raise NotImplementedError
