@@ -289,12 +289,18 @@ class Moon(Planet):
         """
         >>> math.floor(Moon().next_new_moon(2456720.24305)[0])
         2456747
+        >>> math.floor(Moon().next_new_moon(2456731.375)[0] * 1e6)
+        2456747281033
         """
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
         return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
     def next_full_moon(self, jd=jd_now(), as_dict=False):
+        """
+        >>> math.floor(Moon().next_full_moon(2456731.376389)[0] * 1e6)
+        2456733214114
+        """
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
         return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
