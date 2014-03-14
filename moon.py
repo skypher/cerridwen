@@ -394,13 +394,13 @@ def emit_text(result):
 
     next_new_moon_jd, next_new_moon_jd_delta, angle_diff = result['next_new_moon']
     days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
-    print("next new moon: in %d days %d hours (%s), %fdeg exact" %
-            (days, hours, format_jd(next_new_moon_jd), angle_diff))
+    print("next new moon: in %d days %d hours (%s) / %f" %
+            (days, hours, format_jd(next_new_moon_jd), next_new_moon_jd))
 
     next_full_moon_jd, next_full_moon_jd_delta, angle_diff = result['next_full_moon']
     days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
-    print("next full moon: in %d days %d hours (%s), %fdeg exact" %
-            (days, hours, format_jd(next_full_moon_jd), angle_diff))
+    print("next full moon: in %d days %d hours (%s / %f)" %
+            (days, hours, format_jd(next_full_moon_jd), next_full_moon_jd))
 
 def emit_json(result):
     # Note: simplejson treats namedtuples as dicts by default but this is
