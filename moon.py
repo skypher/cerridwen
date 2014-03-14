@@ -355,6 +355,13 @@ def build_result_dict(jd=jd_now()):
     result['speed_ratio'] = moon.speed_ratio(jd)
     result['next_new_moon'] = moon.next_new_moon(jd)
     result['next_full_moon'] = moon.next_full_moon(jd)
+    if result['next_new_moon'].delta_jd < result['next_full_moon'].delta_jd:
+        result['next_new_full_moon'] = result['next_new_moon']
+    else:
+        result['next_new_full_moon'] = result['next_full_moon']
+    result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
+    result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
+    result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
 
     result['dignity'] = moon.dignity(jd)
 
@@ -393,10 +400,12 @@ def emit_json(result):
     # one dep less.
     for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
         result[field] = result[field]._asdict()
-    result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
-    result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
     import json
     return json.dumps(result, indent=8)
+
+def emit_html_widget(result, options={}):
+    import flask
+    return flask.render_template('widget.html', data=result)
 
 def generate_moon_tables():
     raise NotImplementedError
@@ -413,13 +422,20 @@ def generate_moon_tables():
 
 def start_api_server():
     import flask
-    app = flask.Flask(__name__)
+    app = flask.Flask(__name__, template_folder='.')
 
-    @app.route("/")
-    def application():
+    @app.route("/html")
+    def html_widget():
+        result = emit_html_widget(build_result_dict())
         status = 200
+        response = flask.make_response(result, status)
+        response.headers['Content-type'] = 'text/html'
+        return response
+
+    @app.route("/json")
+    def json_api():
         result = emit_json(build_result_dict())
-        #print('result: ',result,type(result))
+        status = 200
         response = flask.make_response(result, status)
         response.headers['Content-type'] = 'text/json'
         return response
@@ -458,6 +474,7 @@ if __name__ == '__main__':
 
 # v1
 # rise, set (angle 0 to ac) -- last and next
+# new/full moon position
 
 # v1.1.0
 # last_new/last_full
