@@ -332,6 +332,15 @@ class Moon(Planet):
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
         return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
+    def next_new_or_full_moon(self, jd=None):
+        # TODO optimize
+        next_new_moon = self.next_new_moon(jd)
+        next_full_moon = self.next_full_moon(jd)
+        if next_new_moon.jd < next_full_moon.jd:
+            return next_new_moon
+        else:
+            return next_full_moon
+
     def is_void_of_course(self, jd=None):
         """Whether the moon is void of course at a certain point in time.
         Returns a tuple (boolean, float) indicating whether it is void
@@ -382,13 +391,6 @@ def build_result_dict(jd=jd_now()):
     sun = Sun(jd)
     result['sun'] = sun.position()
 
-    if result['next_new_moon'].delta_jd < result['next_full_moon'].delta_jd:
-        result['next_new_full_moon'] = result['next_new_moon']
-    else:
-        result['next_new_full_moon'] = result['next_full_moon']
-    result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
-    result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
-    result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
     result['phase'] = moon.phase()
     result['illumination'] = moon.illumination()
     result['distance'] = moon.distance()
@@ -398,6 +400,7 @@ def build_result_dict(jd=jd_now()):
     result['speed_ratio'] = moon.speed_ratio()
     result['next_new_moon'] = moon.next_new_moon()
     result['next_full_moon'] = moon.next_full_moon()
+    result['next_new_full_moon'] = moon.next_new_or_full_moon()
     #result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
     #result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
     #result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
