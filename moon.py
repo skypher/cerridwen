@@ -44,8 +44,9 @@ signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
 traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
 
 class Planet:
-    def __init__(self, planet_id):
+    def __init__(self, planet_id, jd=jd_now()):
         self.id = planet_id
+        self.jd = jd
         self.Position = collections.namedtuple('Position',
                 ['sign', 'degrees', 'minutes', 'absolute_degrees'])
         self.AngleTime = collections.namedtuple('AngleTime',
@@ -54,46 +55,57 @@ class Planet:
     def name(self):
         return sweph.get_planet_name(self.id)
 
-    def diameter(self, jd=jd_now()):
+    def diameter(self, jd=None):
         """The apparent diameter of the planet, in arc minutes."""
+        jd = jd or self.jd
         return sweph.pheno_ut(jd, self.id)[3] * 60
 
-    def longitude(self, jd=jd_now()):
+    def longitude(self, jd=None):
+        jd = jd or self.jd
         long = sweph.calc_ut(jd, self.id)[0]
         return long
 
-    def distance(self, jd=jd_now()):
+    def distance(self, jd=None):
+        jd = jd or self.jd
         distance = sweph.calc_ut(jd, self.id)[2]
         return distance
 
-    def position(self, jd=jd_now()):
+    def position(self, jd=None):
+        jd = jd or self.jd
         long = sweph.calc_ut(jd, self.id)[0]
         sign = signs[int(long / 30)]
         reldeg = long % 30.0
         minutes = ((reldeg % 1) * 100) * 60 / 100
         return self.Position._make([sign, reldeg, minutes, long])
 
-    def sign(self, jd=jd_now()):
+    def sign(self, jd=None):
+        jd = jd or self.jd
         return self.position(jd)[0]
 
-    def speed(self, jd=jd_now()):
+    def speed(self, jd=None):
+        jd = jd or self.jd
         speed = sweph.calc_ut(jd, self.id)[3]
         return speed
 
-    def is_rx(self, jd=jd_now()):
+    def is_rx(self, jd=None):
+        jd = jd or self.jd
         speed = self.speed(jd)
         return speed < 0
 
-    def is_stationing(self, jd=jd_now()):
+    def is_stationing(self, jd=None):
         # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
         # TODO: this is for Mercury, what about other planets?
+        jd = jd or self.jd
         speed = self.speed()
         return math.fabs(speed) < 0.2
 
-    def angle(self, planet, jd=jd_now()):
+    def angle(self, planet, jd=None):
+        jd = jd or self.jd
         return (self.longitude(jd) - planet.longitude(jd)) % 360
 
-    def illumination(self, jd=jd_now()):
+    def illumination(self, jd=None):
+        # TODO also return an indicator of whether it is growing or shrinking.
+        jd = jd or self.jd
         sun = Planet(sweph.SUN)
         print(mod360_fabs(self.angle(sun, jd), 180))
         return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
@@ -110,8 +122,9 @@ class Planet:
     def next_set(self):
         raise NotImplementedError
 
-    def next_angle_to_planet(self, planet, target_angle, jd=jd_now(),
+    def next_angle_to_planet(self, planet, target_angle, jd=None,
                              orb="auto", lookahead="auto"):
+        jd = jd or self.jd
         """Return (jd, delta_jd) indicating the time of the next target_angle
         to a planet.
         Return None if no result could be found in the requested lookahead
@@ -203,32 +216,37 @@ class Planet:
 
         return refined_matches
 
-    def next_sign_change(self, jd=jd_now()):
+    def next_sign_change(self, jd=None):
         # TODO
+        jd = jd or self.jd
         return jd
 
-    def time_left_in_sign(self, jd=jd_now()):
+    def time_left_in_sign(self, jd=None):
         # TODO
+        jd = jd or self.jd
         return jd
 
 class Sun(Planet):
-    def __init__(self):
-        super(Sun, self).__init__(sweph.SUN)
+    def __init__(self, jd=jd_now()):
+        super(Sun, self).__init__(sweph.SUN, jd)
 
 class Moon(Planet):
-    def __init__(self):
-        super(Moon, self).__init__(sweph.MOON)
+    def __init__(self, jd=jd_now()):
+        super(Moon, self).__init__(sweph.MOON, jd)
 
-    def speed_ratio(self, jd=jd_now()):
+    def speed_ratio(self, jd=None):
         # 11.6deg/d to 14.8deg/d
+        jd = jd or self.jd
         return (self.speed(jd) - 11.6) / 3.2
 
-    def diameter_ratio(self, jd=jd_now()):
+    def diameter_ratio(self, jd=None):
         # 29.3' to 34.1'
+        jd = jd or self.jd
         return (self.diameter(jd) - 29.3) / 4.8
 
-    def dignity(self, jd=jd_now()):
+    def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
         sign = self.sign(jd)
         if sign == 'Cancer':
             return 'rulership'
@@ -241,15 +259,18 @@ class Moon(Planet):
         else:
             return None
 
-    def age(self, jd=jd_now()):
+    def age(self, jd=None):
         raise NotImplementedError
+        jd = jd or self.jd
         #return jd - jd_last_new_moon
 
-    def period_length(self, jd=jd_now()):
+    def period_length(self, jd=None):
         raise NotImplementedError
+        jd = jd or self.jd
         #return jd_next_new_moon - jd_last_new_moon
 
-    def phase(self, jd=jd_now()):
+    def phase(self, jd=None):
+        jd = jd or self.jd
         sun = Planet(sweph.SUN)
         angle = self.angle(sun, jd)
 
@@ -285,36 +306,44 @@ class Moon(Planet):
                 ['trend', 'shape', 'quarter', 'quarter_english'])
         return MoonPhaseData._make([trend, shape, quarter, quarter_english])
 
-    def next_new_moon(self, jd=jd_now()):
+    def last_new_moon(self, jd=None):
+        # TODO
+        raise NotImplementedError
+
+    def next_new_moon(self, jd=None):
         """
-        >>> math.floor(Moon().next_new_moon(2456720.24305)[0])
+        >>> math.floor(Moon(2456720.24305).next_new_moon()[0])
         2456747
-        >>> math.floor(Moon().next_new_moon(2456731.375)[0] * 1e6)
+        >>> math.floor(Moon(2456731.375).next_new_moon()[0] * 1e6)
         2456747281033
         """
+        jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
         return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
-    def next_full_moon(self, jd=jd_now(), as_dict=False):
+    def next_full_moon(self, jd=None):
         """
-        >>> math.floor(Moon().next_full_moon(2456731.376389)[0] * 1e6)
+        >>> math.floor(Moon(2456731.376389).next_full_moon()[0] * 1e6)
         2456733214114
         """
+        jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
         return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
 
-    def is_void_of_course(self, jd=jd_now()):
+    def is_void_of_course(self, jd=None):
         """Whether the moon is void of course at a certain point in time.
         Returns a tuple (boolean, float) indicating whether it is void
         of course and up to which point in time."""
         raise NotImplementedError
+        jd = jd or self.jd
         return (False, jd) # TODO
 
     def lunation_number(self):
         # TODO http://en.wikipedia.org/wiki/Lunation_Number
         raise NotImplementedError
+        jd = jd or self.jd
         return 0
 
 def format_jd(jd):
@@ -347,21 +376,12 @@ def build_result_dict(jd=jd_now()):
     result['jd'] = jd
     result['utc'] = format_jd(jd)
 
-    moon = Moon()
-    result['moon'] = moon.position(jd)
+    moon = Moon(jd)
+    result['moon'] = moon.position()
 
-    sun = Sun()
-    result['sun'] = sun.position(jd)
+    sun = Sun(jd)
+    result['sun'] = sun.position()
 
-    result['phase'] = moon.phase(jd)
-    result['illumination'] = moon.illumination(jd)
-    result['distance'] = moon.distance(jd)
-    result['diameter'] = moon.diameter(jd)
-    result['diameter_ratio'] = moon.diameter_ratio(jd)
-    result['speed'] = moon.speed(jd)
-    result['speed_ratio'] = moon.speed_ratio(jd)
-    result['next_new_moon'] = moon.next_new_moon(jd)
-    result['next_full_moon'] = moon.next_full_moon(jd)
     if result['next_new_moon'].delta_jd < result['next_full_moon'].delta_jd:
         result['next_new_full_moon'] = result['next_new_moon']
     else:
@@ -369,8 +389,20 @@ def build_result_dict(jd=jd_now()):
     result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
     result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
     result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
+    result['phase'] = moon.phase()
+    result['illumination'] = moon.illumination()
+    result['distance'] = moon.distance()
+    result['diameter'] = moon.diameter()
+    result['diameter_ratio'] = moon.diameter_ratio()
+    result['speed'] = moon.speed()
+    result['speed_ratio'] = moon.speed_ratio()
+    result['next_new_moon'] = moon.next_new_moon()
+    result['next_full_moon'] = moon.next_full_moon()
+    #result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
+    #result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
+    #result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
 
-    result['dignity'] = moon.dignity(jd)
+    result['dignity'] = moon.dignity()
 
     return result
 
