@@ -452,7 +452,12 @@ def start_api_server():
 
 
 if __name__ == '__main__':
-    server = True
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-s", "--server", default=False, action="store_true",
+                        help="Run as API server")
+    args = parser.parse_args()
+    server = args.server
 
     print('Running basic sanity tests.')
     import doctest
