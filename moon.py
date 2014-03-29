@@ -47,10 +47,9 @@ class Planet:
     def __init__(self, planet_id, jd=jd_now()):
         self.id = planet_id
         self.jd = jd
-        self.Position = collections.namedtuple('Position',
+        self.Position = collections.namedtuple('PlanetPosition',
                 ['sign', 'degrees', 'minutes', 'absolute_degrees'])
-        self.AngleTime = collections.namedtuple('AngleTime',
-                ['jd', 'delta_jd', 'angle_diff'])
+        self.Event = collections.namedtuple('PlanetEvent', ['jd', 'delta_jd', 'angle_diff', 'description'])
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -320,7 +319,7 @@ class Moon(Planet):
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
-        return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
+        return self.Event._make([next_angle_jd, delta_jd, angle_diff, 'New Moon in ' + self.sign(next_angle_jd)])
 
     def next_full_moon(self, jd=None):
         """
@@ -330,7 +329,7 @@ class Moon(Planet):
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
-        return self.AngleTime._make([next_angle_jd, delta_jd, angle_diff])
+        return self.Event._make([next_angle_jd, delta_jd, angle_diff, 'Full Moon in ' + self.sign(next_angle_jd)])
 
     def next_new_or_full_moon(self, jd=None):
         # TODO optimize
@@ -345,6 +344,10 @@ class Moon(Planet):
         """Whether the moon is void of course at a certain point in time.
         Returns a tuple (boolean, float) indicating whether it is void
         of course and up to which point in time."""
+        # as per http://www.astrologyweekly.com/astrology-articles/void-of-course-moon.php
+        # and http://www.estelledaniels.com/articles/VoidMoon.html
+        # the traditional planets plus the major new ones (uranus, neptune, pluto) are used
+        # plus the traditional aspects of conjunction, sextile, square, trine, opposition
         raise NotImplementedError
         jd = jd or self.jd
         return (False, jd) # TODO
@@ -378,6 +381,24 @@ def days_frac_to_dhms(days_frac):
     seconds = math.floor((minutes_frac - minutes / 1440) * 86400)
 
     return (days, hours, minutes, seconds)
+
+def render_delta_jd(delta_jd):
+    days, hours, minutes = days_frac_to_dhms(delta_jd)[:3]
+    result = [] 
+
+    if days > 0:
+        result += ['%d days' % days]
+
+    if hours > 0:
+        result += ['%d hours' % hours]
+
+    if days == 0 and minutes > 0:
+        result += ['%d minutes' % minutes]
+
+    if days == 0 and hours == 0 and minutes == 0:
+        result = ['less than a minute']
+
+    return ' '.join(result);
 
 def build_result_dict(jd=jd_now()):
     result = collections.OrderedDict()
@@ -427,15 +448,13 @@ def emit_text(result):
     print("phase: %s, quarter: %s, illum: %d%%" %
             (phase, quarter_english, result['illumination'] * 100))
 
-    next_new_moon_jd, next_new_moon_jd_delta, angle_diff = result['next_new_moon']
-    days, hours = days_frac_to_dhms(next_new_moon_jd_delta)[:2]
-    print("next new moon: in %d days %d hours (%s / %f)" %
-            (days, hours, format_jd(next_new_moon_jd), next_new_moon_jd))
+    next_new_moon = result['next_new_moon']
+    print("next new moon: in %s (%s / %f)" %
+            (render_delta_jd(next_new_moon.delta_jd), format_jd(next_new_moon.jd), next_new_moon.jd))
 
-    next_full_moon_jd, next_full_moon_jd_delta, angle_diff = result['next_full_moon']
-    days, hours = days_frac_to_dhms(next_full_moon_jd_delta)[:2]
-    print("next full moon: in %d days %d hours (%s / %f)" %
-            (days, hours, format_jd(next_full_moon_jd), next_full_moon_jd))
+    next_full_moon = result['next_full_moon']
+    print("next full moon: in %s (%s / %f)" %
+            (render_delta_jd(next_full_moon.delta_jd), format_jd(next_full_moon.jd), next_full_moon.jd))
 
 def emit_json(result):
     # Note: simplejson treats namedtuples as dicts by default but this is
@@ -465,6 +484,11 @@ def generate_moon_tables():
 def start_api_server():
     import flask
     app = flask.Flask(__name__, template_folder='.')
+    app.jinja_env.filters['render_delta_jd'] = render_delta_jd
+
+    @app.route("/")
+    def test():
+        return '<html><body><iframe src="/html" width=300 height=200/></body></html>'
 
     @app.route("/html")
     def html_widget():
@@ -535,3 +559,9 @@ if __name__ == '__main__':
 
 # for diameter ratio see the numbers here:
 # http://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
+
+# some more ideas:
+# * monthly calendar (as widget and for printing)
+# * upcoming event stream: https://play.google.com/store/apps/details?id=uk.co.lunarium.iluna
+
+# http://starchild.gsfc.nasa.gov/docs/StarChild/questions/question5.html

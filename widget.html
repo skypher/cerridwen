@@ -1,13 +1,19 @@
+<html>
+<body>
 <div class="moon-widget">
     <div class="time utc">{{ data.utc }}</div>
-    <div class="phase">Phase: {{ data.phase }} ({{ data.illumination * 100 }}%)</div>
-    <div class="speed-ratio">Speed: {{ data.speed_ratio * 100 }}</div>
-    <div class="diameter-ratio">Apparent Diameter: {{ data.diameter_ratio * 100 % 1}}%</div>
+    <div class="phase">Phase: {{ data.phase.trend }} {{ data.phase.shape }}
+      ({{ (data.illumination * 100) // 1 }}% illuminated)</div>
+    <div class="speed">
+      Speed: {{ '%d' % (data.speed_ratio * 100) }}%
+      ({{ '%.1f' % data.speed }} deg/d)</div>
+    <div class="diameter-ratio">Apparent Diameter: {{ '%d' % (data.diameter_ratio * 100) }}%</div>
     <div class="next-moon">
-        Next event: {{ data.next_new_full_moon.type }}
-        Moon in SIGN at {{ data.next_new_full_moon.utc }}
+        Next event: {{ data.next_new_full_moon.description }} (in {{ data.next_new_full_moon.delta_jd|render_delta_jd }})
     </div>
     <div class="dignity">
         Dignity: {{ data.dignity }}
     </div>
 </div>
+</body>
+</html>
