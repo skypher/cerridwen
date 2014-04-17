@@ -1,0 +1,20 @@
+AstroGadget  TTF  ReadMe
+_________________
+
+Production Information:
+This is the 1st release of AstroGadget.
+It is the 2nd font in the Astrological Font Series.
+This font was created on a PC running WinXP / UK keyboard layout.
+And Designed using Font Creator Program v3 & FontLab v4.
+
+Distribution Notice: 
+This font is Copyrighted 2003 by Jason Davies and is available for use at no charge and may be distributed freely as long as this archive [along with this ReadMe file] is kept as-is, intact.
+
+You may use this font for commercial purposes if you notify jason@widgetsworld.co.uk.
+
+More Typefaces:
+Future typfaces releases will include Astroids, TransNeptunians, and minor aspects.
+
+You may find future fonts and updated versions of Widget here:
+
+        http://www.widgetsworld.co.uk/

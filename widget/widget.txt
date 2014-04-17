@@ -1,0 +1,11 @@
+current moon/next new/next full:
+  time utc
+  current: next full or new with link (time, sign/deg)
+  current: phase pic
+  size >>>
+  speed >>>
+  exalted
+  sign glyph deg min sec
+  time of entering next sign
+  next void of course phase (or end of current voc phase)
+

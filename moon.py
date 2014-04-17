@@ -358,13 +358,6 @@ class Moon(Planet):
         jd = jd or self.jd
         return 0
 
-def format_jd(jd):
-    """Convert jd into an ISO 8601 string representation"""
-    year, month, day, hour_frac = sweph.revjul(jd)
-    _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
-    time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
-    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time_))
-
 def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours and minutes.
 
@@ -382,7 +375,22 @@ def days_frac_to_dhms(days_frac):
 
     return (days, hours, minutes, seconds)
 
+def format_jd(jd):
+    """Convert jd into an ISO 8601 string representation"""
+    year, month, day, hour_frac = sweph.revjul(jd)
+    _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
+    time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time_))
+
+def render_pretty_time(jd):
+    """Convert jd into a pretty string representation"""
+    year, month, day, hour_frac = sweph.revjul(jd)
+    _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
+    time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
+    return time.strftime('%e %b %Y %H:%M UTC', time.gmtime(time_))
+
 def render_delta_jd(delta_jd):
+    """Convert a time delta into a pretty string representation"""
     days, hours, minutes = days_frac_to_dhms(delta_jd)[:3]
     result = [] 
 
@@ -407,7 +415,7 @@ def build_result_dict(jd=jd_now()):
     result['utc'] = format_jd(jd)
 
     moon = Moon(jd)
-    result['moon'] = moon.position()
+    result['position'] = moon.position()
 
     sun = Sun(jd)
     result['sun'] = sun.position()
@@ -437,7 +445,7 @@ def emit_text(result):
     print('Universal time (UTC):', result['utc'])
     print('Local time:', time.asctime())
 
-    sign, deg, minutes = result['moon'][:3]
+    sign, deg, minutes = result['position'][:3]
     print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
 
     sign, deg, minutes = result['sun'][:3]
@@ -449,24 +457,20 @@ def emit_text(result):
             (phase, quarter_english, result['illumination'] * 100))
 
     next_new_moon = result['next_new_moon']
-    print("next new moon: in %s (%s / %f)" %
-            (render_delta_jd(next_new_moon.delta_jd), format_jd(next_new_moon.jd), next_new_moon.jd))
+    print("next new moon: %s: in %s (%s / %f)" %
+            (next_new_moon.description, render_delta_jd(next_new_moon.delta_jd), format_jd(next_new_moon.jd), next_new_moon.jd))
 
     next_full_moon = result['next_full_moon']
-    print("next full moon: in %s (%s / %f)" %
-            (render_delta_jd(next_full_moon.delta_jd), format_jd(next_full_moon.jd), next_full_moon.jd))
+    print("next full moon: %s: in %s (%s / %f)" %
+            (next_full_moon.description, render_delta_jd(next_full_moon.delta_jd), format_jd(next_full_moon.jd), next_full_moon.jd))
 
 def emit_json(result):
     # Note: simplejson treats namedtuples as dicts by default but this is
     # one dep less.
-    for field in ['moon', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
+    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
         result[field] = result[field]._asdict()
     import json
     return json.dumps(result, indent=8)
-
-def emit_html_widget(result, options={}):
-    import flask
-    return flask.render_template('widget.html', data=result)
 
 def generate_moon_tables():
     raise NotImplementedError
@@ -485,24 +489,14 @@ def start_api_server():
     import flask
     app = flask.Flask(__name__, template_folder='.')
     app.jinja_env.filters['render_delta_jd'] = render_delta_jd
+    app.jinja_env.filters['prettytime'] = render_pretty_time
 
-    @app.route("/")
-    def test():
-        return '<html><body><iframe src="/html" width=300 height=200/></body></html>'
-
-    @app.route("/html")
-    def html_widget():
-        result = emit_html_widget(build_result_dict())
-        status = 200
-        response = flask.make_response(result, status)
-        response.headers['Content-type'] = 'text/html'
-        return response
-
-    @app.route("/json")
+    @app.route("/v1")
     def json_api():
         result = emit_json(build_result_dict())
         status = 200
         response = flask.make_response(result, status)
+        response.headers['Access-Control-Allow-Origin'] = '*'
         response.headers['Content-type'] = 'text/json'
         return response
 
