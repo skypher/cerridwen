@@ -43,13 +43,59 @@ signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
 
 traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
 
+# TODO: it would be nice to use recordtype (a mutable version of
+# collections.namedtuple) as base class here, but it doesn't work with
+# Python 3. See http://bit.ly/1qPmHn0 for the ignored pull request.
+
+class PlanetEvent():
+    def __init__(self, description, jd):
+        super(PlanetEvent, self).__init__()
+        self.description = description
+        self.jd = jd
+
+    @property
+    def iso_date(self):
+        return jd2iso(self.jd)
+
+    @property
+    def delta_days(self, rel_jd=jd_now()):
+        return self.jd - rel_jd
+
+    def _asdict(self):
+        fields = ['description', 'jd', 'iso_date', 'delta_days']
+        values = map(lambda name: getattr(self, name), fields)
+        return collections.OrderedDict(zip(fields, values))
+
+class PlanetLongitude():
+    def __init__(self, absolute_degrees):
+        super(PlanetLongitude, self).__init__()
+        self.absolute_degrees = absolute_degrees
+
+    @property
+    def sign(self):
+        return signs[int(self.absolute_degrees / 30)]
+
+    @property
+    def deg(self):
+        return self.absolute_degrees % 30.0
+
+    @property
+    def min(self):
+        return ((self.deg % 1) * 100) * 60 / 100
+
+    @property
+    def rel_tuple(self):
+        return (self.sign, self.deg, self.min)
+
+    def _asdict(self):
+        fields = ['absolute_degrees', 'sign', 'deg', 'min', 'rel_tuple']
+        values = map(lambda name: getattr(self, name), fields)
+        return collections.OrderedDict(zip(fields, values))
+
 class Planet:
     def __init__(self, planet_id, jd=jd_now()):
         self.id = planet_id
         self.jd = jd
-        self.Position = collections.namedtuple('PlanetPosition',
-                ['sign', 'degrees', 'minutes', 'absolute_degrees'])
-        self.Event = collections.namedtuple('PlanetEvent', ['jd', 'delta_jd', 'angle_diff', 'description'])
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -72,14 +118,11 @@ class Planet:
     def position(self, jd=None):
         jd = jd or self.jd
         long = sweph.calc_ut(jd, self.id)[0]
-        sign = signs[int(long / 30)]
-        reldeg = long % 30.0
-        minutes = ((reldeg % 1) * 100) * 60 / 100
-        return self.Position._make([sign, reldeg, minutes, long])
+        return PlanetLongitude(long)
 
     def sign(self, jd=None):
         jd = jd or self.jd
-        return self.position(jd)[0]
+        return self.position(jd).sign
 
     def speed(self, jd=None):
         jd = jd or self.jd
@@ -153,8 +196,8 @@ class Planet:
         if debug_angle_finder:
             print('atpwp (:=%d deg): start=%f (%s), end=%f (%s), interval=%f, '
                   'sample_pass=%d'
-                  % (target_angle, jd_start, format_jd(jd_start), jd_end,
-                     format_jd(jd_end), sample_interval, passes))
+                  % (target_angle, jd_start, jd2iso(jd_start), jd_end,
+                     jd2iso(jd_end), sample_interval, passes))
         jds = np.arange(jd_start, jd_end, sample_interval)
         def angle_at_jd(d):
             return self.angle(planet, d)
@@ -311,25 +354,25 @@ class Moon(Planet):
 
     def next_new_moon(self, jd=None):
         """
-        >>> math.floor(Moon(2456720.24305).next_new_moon()[0])
+        >>> math.floor(Moon(2456720.24305).next_new_moon().jd)
         2456747
-        >>> math.floor(Moon(2456731.375).next_new_moon()[0] * 1e6)
+        >>> math.floor(Moon(2456731.375).next_new_moon().jd * 1e6)
         2456747281033
         """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
-        return self.Event._make([next_angle_jd, delta_jd, angle_diff, 'New Moon in ' + self.sign(next_angle_jd)])
+        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_full_moon(self, jd=None):
         """
-        >>> math.floor(Moon(2456731.376389).next_full_moon()[0] * 1e6)
+        >>> math.floor(Moon(2456731.376389).next_full_moon().jd * 1e6)
         2456733214114
         """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
-        return self.Event._make([next_angle_jd, delta_jd, angle_diff, 'Full Moon in ' + self.sign(next_angle_jd)])
+        return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_new_or_full_moon(self, jd=None):
         # TODO optimize
@@ -375,7 +418,7 @@ def days_frac_to_dhms(days_frac):
 
     return (days, hours, minutes, seconds)
 
-def format_jd(jd):
+def jd2iso(jd):
     """Convert jd into an ISO 8601 string representation"""
     year, month, day, hour_frac = sweph.revjul(jd)
     _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
@@ -389,9 +432,9 @@ def render_pretty_time(jd):
     time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
     return time.strftime('%e %b %Y %H:%M UTC', time.gmtime(time_))
 
-def render_delta_jd(delta_jd):
+def render_delta_days(delta_days):
     """Convert a time delta into a pretty string representation"""
-    days, hours, minutes = days_frac_to_dhms(delta_jd)[:3]
+    days, hours, minutes = days_frac_to_dhms(delta_days)[:3]
     result = [] 
 
     if days > 0:
@@ -412,7 +455,7 @@ def build_result_dict(jd=jd_now()):
     result = collections.OrderedDict()
 
     result['jd'] = jd
-    result['utc'] = format_jd(jd)
+    result['iso_date'] = jd2iso(jd)
 
     moon = Moon(jd)
     result['position'] = moon.position()
@@ -430,9 +473,6 @@ def build_result_dict(jd=jd_now()):
     result['next_new_moon'] = moon.next_new_moon()
     result['next_full_moon'] = moon.next_full_moon()
     result['next_new_full_moon'] = moon.next_new_or_full_moon()
-    #result['next_new_moon']['utc'] = format_jd(result['next_new_moon']['jd'])
-    #result['next_full_moon']['utc'] = format_jd(result['next_full_moon']['jd'])
-    #result['next_new_full_moon']['utc'] = format_jd(result['next_new_full_moon']['jd'])
 
     result['dignity'] = moon.dignity()
 
@@ -442,13 +482,13 @@ def build_result_dict(jd=jd_now()):
 def emit_text(result):
     # TODO build string and return
     print('Julian day:', result['jd'])
-    print('Universal time (UTC):', result['utc'])
+    print('Universal time (UTC):', result['iso_date'])
     print('Local time:', time.asctime())
 
-    sign, deg, minutes = result['position'][:3]
+    sign, deg, minutes = result['position'].rel_tuple
     print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
 
-    sign, deg, minutes = result['sun'][:3]
+    sign, deg, minutes = result['sun'].rel_tuple
     print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
 
     trend, shape, quarter, quarter_english = result['phase']
@@ -458,16 +498,16 @@ def emit_text(result):
 
     next_new_moon = result['next_new_moon']
     print("next new moon: %s: in %s (%s / %f)" %
-            (next_new_moon.description, render_delta_jd(next_new_moon.delta_jd), format_jd(next_new_moon.jd), next_new_moon.jd))
+            (next_new_moon.description, render_delta_days(next_new_moon.delta_days), jd2iso(next_new_moon.jd), next_new_moon.jd))
 
     next_full_moon = result['next_full_moon']
     print("next full moon: %s: in %s (%s / %f)" %
-            (next_full_moon.description, render_delta_jd(next_full_moon.delta_jd), format_jd(next_full_moon.jd), next_full_moon.jd))
+            (next_full_moon.description, render_delta_days(next_full_moon.delta_days), jd2iso(next_full_moon.jd), next_full_moon.jd))
 
 def emit_json(result):
     # Note: simplejson treats namedtuples as dicts by default but this is
     # one dep less.
-    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon']:
+    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon', 'next_new_full_moon']:
         result[field] = result[field]._asdict()
     import json
     return json.dumps(result, indent=8)
@@ -488,8 +528,6 @@ def generate_moon_tables():
 def start_api_server():
     import flask
     app = flask.Flask(__name__, template_folder='.')
-    app.jinja_env.filters['render_delta_jd'] = render_delta_jd
-    app.jinja_env.filters['prettytime'] = render_pretty_time
 
     @app.route("/v1")
     def json_api():
@@ -527,8 +565,8 @@ if __name__ == '__main__':
                 jd = jd_now()+i*30
                 new = moon.next_new_moon(jd)
                 full = moon.next_full_moon(jd)
-                print(format_jd(new[0]), new[2])
-                print(format_jd(full[0]), full[2])
+                print(jd2iso(new[0]), new[2])
+                print(jd2iso(full[0]), full[2])
             sys.exit(1)
 
         result = build_result_dict()
@@ -559,3 +597,7 @@ if __name__ == '__main__':
 # * upcoming event stream: https://play.google.com/store/apps/details?id=uk.co.lunarium.iluna
 
 # http://starchild.gsfc.nasa.gov/docs/StarChild/questions/question5.html
+
+# events to subscribe:
+# full, new, 1st quarter, 3rd quarter, sign change, void of course, aspect (one of subset X) to planet (one of subset Y)
+
