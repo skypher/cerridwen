@@ -451,7 +451,7 @@ def render_delta_days(delta_days):
 
     return ' '.join(result);
 
-def build_result_dict(jd=jd_now()):
+def compute_moon_data(jd=jd_now()):
     result = collections.OrderedDict()
 
     result['jd'] = jd
@@ -478,40 +478,6 @@ def build_result_dict(jd=jd_now()):
 
     return result
 
-
-def emit_text(result):
-    # TODO build string and return
-    print('Julian day:', result['jd'])
-    print('Universal time (UTC):', result['iso_date'])
-    print('Local time:', time.asctime())
-
-    sign, deg, minutes = result['position'].rel_tuple
-    print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
-
-    sign, deg, minutes = result['sun'].rel_tuple
-    print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
-
-    trend, shape, quarter, quarter_english = result['phase']
-    phase = trend + ' ' + shape
-    print("phase: %s, quarter: %s, illum: %d%%" %
-            (phase, quarter_english, result['illumination'] * 100))
-
-    next_new_moon = result['next_new_moon']
-    print("next new moon: %s: in %s (%s / %f)" %
-            (next_new_moon.description, render_delta_days(next_new_moon.delta_days), jd2iso(next_new_moon.jd), next_new_moon.jd))
-
-    next_full_moon = result['next_full_moon']
-    print("next full moon: %s: in %s (%s / %f)" %
-            (next_full_moon.description, render_delta_days(next_full_moon.delta_days), jd2iso(next_full_moon.jd), next_full_moon.jd))
-
-def emit_json(result):
-    # Note: simplejson treats namedtuples as dicts by default but this is
-    # one dep less.
-    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon', 'next_new_full_moon']:
-        result[field] = result[field]._asdict()
-    import json
-    return json.dumps(result, indent=8)
-
 def generate_moon_tables():
     raise NotImplementedError
 
@@ -525,55 +491,21 @@ def generate_moon_tables():
     # repeat for the future
     # repeat all this for full moon
 
-def start_api_server():
-    import flask
-    app = flask.Flask(__name__, template_folder='.')
-
-    @app.route("/v1")
-    def json_api():
-        result = emit_json(build_result_dict())
-        status = 200
-        response = flask.make_response(result, status)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Content-type'] = 'text/json'
-        return response
-
-    app.debug = True
-    app.run()
-
-
 if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--server", default=False, action="store_true",
-                        help="Run as API server")
-    args = parser.parse_args()
-    server = args.server
-
     print('Running basic sanity tests.')
     import doctest
     doctest.testmod()
     print('Done.')
 
-    if server:
-        print('Starting API server.')
-        start_api_server()
-    else:
-        if debug_angle_finder:
-            for i in range(1,100):
-                moon = Moon()
-                jd = jd_now()+i*30
-                new = moon.next_new_moon(jd)
-                full = moon.next_full_moon(jd)
-                print(jd2iso(new[0]), new[2])
-                print(jd2iso(full[0]), full[2])
-            sys.exit(1)
-
-        result = build_result_dict()
-
-        emit_text(result);
-        emit_json(result);
-
+    if debug_angle_finder:
+        for i in range(1,100):
+            moon = Moon()
+            jd = jd_now()+i*30
+            new = moon.next_new_moon(jd)
+            full = moon.next_full_moon(jd)
+            print(jd2iso(new[0]), new[2])
+            print(jd2iso(full[0]), full[2])
+        sys.exit(1)
 
 # v1
 # rise, set (angle 0 to ac) -- last and next
