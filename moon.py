@@ -357,7 +357,7 @@ class Moon(Planet):
         >>> math.floor(Moon(2456720.24305).next_new_moon().jd)
         2456747
         >>> math.floor(Moon(2456731.375).next_new_moon().jd * 1e6)
-        2456747281033
+        2456747281041
         """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
@@ -367,7 +367,7 @@ class Moon(Planet):
     def next_full_moon(self, jd=None):
         """
         >>> math.floor(Moon(2456731.376389).next_full_moon().jd * 1e6)
-        2456733214114
+        2456733214123
         """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
