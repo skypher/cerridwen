@@ -53,10 +53,14 @@
 <body>
 <pre>
 <?php
-$moon_json_uri = 'http://localhost:5000/json';
+$moon_json_uri = 'http://localhost:5000/v1';
 $json = file_get_contents($moon_json_uri);
 $data = json_decode($json, true);
 print_r($data);
+/*
+  print_r(DateTime::createFromFormat(DATE_ISO8601, '2014-04-17T16:33:59Z'));
+  print_r(DateTime::getLastErrors());
+ */
 ?>
 </pre>
 <div class="moon-widget">
