@@ -1,7 +1,0 @@
-Name: Cerridwen
-Version: 1.0
-Description: Cerridwen provides an API and library functions for moon data.
-
-Library:
-    Packages:
-        cerridwen, cerridwen.moon

@@ -33,7 +33,7 @@ def emit_text(result):
              cerridwen.render_delta_days(next_full_moon.delta_days),
              cerridwen.jd2iso(next_full_moon.jd), next_full_moon.jd))
 
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
@@ -44,4 +44,7 @@ if __name__ == '__main__':
     print('Done.')
 
     emit_text(cerridwen.compute_moon_data());
+
+if __name__ == '__main__':
+    main()
 

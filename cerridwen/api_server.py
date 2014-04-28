@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+
 import cerridwen
 import flask
 
@@ -25,8 +26,7 @@ def start_api_server():
     app.debug = True
     app.run()
 
-
-if __name__ == '__main__':
+def main():
     import argparse
     parser = argparse.ArgumentParser()
     # TODO port
@@ -41,4 +41,7 @@ if __name__ == '__main__':
 
     print('Starting Cerridwen API server on port 5000.')
     start_api_server()
+
+if __name__ == '__main__':
+    main()
 

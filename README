@@ -1,3 +1,16 @@
+Cerridwen
+=========
+Cerridwen provides data on the moon that is suitable
+for both astronomical and astrological purposes. It
+comes with a simple command-line utility and a JSON
+server.
+
+The motivation for this package is to have a reliable
+open-source library and API that provides data on the
+moon and, eventually, other planetary bodies at a certain
+point in time.
+
+
 Requirements
 ============
 
@@ -32,7 +45,7 @@ $ python3 api_server.py
 It will start up in the foreground and listen on port 5000,
 serving moon data via HTTP in JSON format at the URI `/v1/moon`.
 
-So, to test it:
+So to test it invoke:
 
 ```
 $ curl http://localhost:5000/v1/moon
@@ -40,3 +53,43 @@ $ curl http://localhost:5000/v1/moon
 
 This should give you a proper JSON response with
 the current moon data.
+
+
+FAQ
+===
+
+.h3 What's the guaranteed precision of the generated data?
+
+For new and full moons (and other angles) the maximum error is smaller than 1/10^6.
+
+
+.h3 What zodiac is used for the longitudes?
+
+All longitudes whether absolute or relative use the tropical zodiac, i.e. zero degrees
+equals zero degrees Aries equals the vernal equinox of the year in question.
+
+
+.h3 What about other planetary bodies?
+
+The source code is designed to be easily extensible to other planets and points.
+The goal is to add more planets once the moon interface is reasonably mature.
+
+
+.h3 Will you add more moon data?
+
+Yes! For example equatorial latitude, lunation number and rise/set times.
+
+
+.h3 How can I help?
+
+First and foremost: use it! Also: tell your friends and fellow astronomers/astrologers!
+
+You can also help write docs, contribute source code and tell me what you'd like
+to see in the project.
+
+
+.h3 Are you from Wales?
+
+No. But it's a nice place with rich mythology. :)
+
+
