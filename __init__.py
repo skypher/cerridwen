@@ -17,7 +17,6 @@ import collections
 
 import sys
 
-sweph.set_ephe_path('/home/sky/eph/sweph')
 
 def jd_now():
     gmtime = time.gmtime()

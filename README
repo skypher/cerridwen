@@ -1,0 +1,42 @@
+Requirements
+============
+
+Cerridwen depends on Python 3. You might be able to make
+it work with Python 2 as well.
+
+You'll also need
+
+* pyswisseph, the Python interface to the Swiss Ephemeris library
+
+* numpy, which Cerridwen uses for its ephemeris calculations
+
+* Flask, if you wish to run Cerridwen's API server
+
+
+Quickstart
+==========
+
+To test Cerridwen's data on the console, invoke:
+
+```
+$ python3 cli.py
+```
+
+If everything is to your satisfaction you can then
+start the API server:
+
+```
+$ python3 api_server.py
+```
+
+It will start up in the foreground and listen on port 5000,
+serving moon data via HTTP in JSON format at the URI `/v1/moon`.
+
+So, to test it:
+
+```
+$ curl http://localhost:5000/v1/moon
+```
+
+This should give you a proper JSON response with
+the current moon data.
