@@ -4,7 +4,7 @@ from setuptools import setup
 import os
 
 here = os.path.abspath(os.path.dirname(__file__))
-README = open(os.path.join(here, 'README')).read()
+README = open(os.path.join(here, 'README.rst')).read()
 #NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
@@ -17,16 +17,16 @@ setup(name='cerridwen',
       author='Leslie P. Polzer',
       author_email='leslie.polzer@gmx.net',
       url='',
-      license='GPL3',
+      license='Apache',
       classifiers=[
         # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
         "Development Status :: 3 - Alpha"
       , "Environment :: Console"
       , "Intended Audience :: Science/Research"
-      , "License :: OSI Approved :: GNU General Public License (GPL)"
+      , "License :: OSI Approved :: Apache Software License"
       , "Operating System :: OS Independent"
       , "Programming Language :: Python"
-      , "Topic :: Scientific/Engineering :: Information Analysis"
+      , "Topic :: Scientific/Engineering :: Astronomy"
       ],
       maintainer='Leslie P. Polzer',
       maintainer_email='leslie.polzer@gmx.net',
