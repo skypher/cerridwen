@@ -1,10 +1,6 @@
 Cerridwen
 =========
 
-:Author: Leslie P. Polzer
-
-.. contents::
-
 Cerridwen provides data on the moon that is suitable
 for both astronomical and astrological purposes. It
 comes with a simple command-line utility and a JSON
@@ -14,6 +10,9 @@ The motivation for this package is to have a reliable
 open-source library and API that provides data on the
 moon and, eventually, other planetary bodies at a certain
 point in time.
+
+
+.. contents::
 
 
 Requirements
