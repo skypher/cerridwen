@@ -13,7 +13,7 @@ def emit_json(result):
     import json
     return json.dumps(result, indent=8)
 
-def start_api_server():
+def start_api_server(port):
     @app.route("/v1/moon")
     def json_api():
         result = emit_json(cerridwen.compute_moon_data())
@@ -24,14 +24,13 @@ def start_api_server():
         return response
 
     app.debug = True
-    app.run()
+    app.run(port=port)
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
-    # TODO port
-    #parser.add_argument("-s", "--server", default=False, action="store_true",
-    #                    help="Run as API server")
+    parser = argparse.ArgumentParser(description="Cerridwen API Server")
+    parser.add_argument("-p", "--port", type=int, default=2828, 
+                        help="Port to listen to")
     args = parser.parse_args()
 
     print('Running basic sanity tests for Cerridwen...')
@@ -39,8 +38,8 @@ def main():
     doctest.testmod(cerridwen, raise_on_error=True)
     print('Done.')
 
-    print('Starting Cerridwen API server on port 5000.')
-    start_api_server()
+    print('Starting Cerridwen API server on port %d.' % args.port)
+    start_api_server(port=args.port)
 
 if __name__ == '__main__':
     main()
