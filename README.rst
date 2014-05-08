@@ -32,26 +32,35 @@ It also depends on these packages:
 
 * Flask, if you wish to run Cerridwen's API server
 
+These dependencies will be installed automatically as needed.
+
 
 Quickstart
 ----------
 
+Installation via pip is very simple. Here are some command
+lines to get you started:
+
 ::
 
-  $ pip install cerridwen
+  pip install cerridwen
+
+This will installed Cerridwen and its dependencies. Flask
+will be installed when you start ``cerridwen-server`` for the
+first time.
 
 To test Cerridwen's data on the console, invoke:
 
 ::
 
-  $ cerridwen
+  cerridwen
 
 If everything is to your satisfaction you can then
-start the API server:
+start the API server if you wish:
 
 ::
 
-  $ cerridwen-server
+  cerridwen-server
 
 It will start up in the foreground and listen on port 2828,
 serving moon data via HTTP in JSON format at the URI `/v1/moon`.
@@ -60,13 +69,13 @@ You can test it as follows:
 
 ::
 
-  $ curl http://localhost:2828/v1/moon
+  curl http://localhost:2828/v1/moon
 
 This should give you a proper JSON response with
 the current moon data.
 
-Change the listen port by passing the -p switch to cerridwen-server,
-followed by the desired port.
+Change the listen port by passing the ``-p`` switch to
+``cerridwen-server``, followed by the desired port.
 
 
 FAQ
@@ -75,15 +84,16 @@ FAQ
 What's the guaranteed precision of the generated data?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For new and full moons (and other angles) the maximum error is smaller than 1/10^6.
+For new and full moons (and other angles) the maximum error does never exceed
+1/10^6, guaranteed by an assertion.
 
 
 What zodiac is used for the longitudes?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-All longitudes whether absolute or relative use the tropical zodiac, i.e. zero degrees
-refers to zero degrees tropical Aries, which in turn corresponds to the sun's position
-at the vernal equinox of the year in question.
+All longitudes whether absolute or relative use the tropical zodiac, i.e. zero
+degrees refers to zero degrees tropical Aries, which in turn corresponds to the
+sun's position at the vernal equinox of the year in question.
 
 
 What about other planetary bodies?
@@ -102,10 +112,11 @@ Yes! For example equatorial latitude, lunation number and rise/set times.
 How can I help?
 ^^^^^^^^^^^^^^^
 
-First and foremost: use it! Also: tell your friends and fellow astronomers/astrologers!
+First and foremost: use it! Also: tell your friends and fellow
+astronomers/astrologers!
 
-You can also help write docs, contribute source code and tell me what you'd like
-to see in the project.
+You can also help write docs, contribute source code and tell me what
+you'd like to see in the project.
 
 Donations are also welcome.
 

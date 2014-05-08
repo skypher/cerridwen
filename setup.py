@@ -8,10 +8,10 @@ README = open(os.path.join(here, 'README.rst')).read()
 #NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '0.1.3'
+version = '1.0rc1'
 
 setup(name='cerridwen',
-      version='1.0',
+      version=version,
       description='Moon data library and API server',
       long_description=README,
       author='Leslie P. Polzer',
@@ -20,12 +20,12 @@ setup(name='cerridwen',
       license='Apache',
       classifiers=[
         # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
-        "Development Status :: 3 - Alpha"
+        "Development Status :: 4 - Beta"
       , "Environment :: Console"
       , "Intended Audience :: Science/Research"
-      , "License :: OSI Approved :: Apache Software License"
+      , "License :: OSI Approved :: MIT License"
       , "Operating System :: OS Independent"
-      , "Programming Language :: Python"
+      , "Programming Language :: Python :: 3"
       , "Topic :: Scientific/Engineering :: Astronomy"
       ],
       maintainer='Leslie P. Polzer',
