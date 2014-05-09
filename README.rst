@@ -45,7 +45,7 @@ lines to get you started:
 
   pip install cerridwen
 
-This will installed Cerridwen and its dependencies. Flask
+This will install Cerridwen and its dependencies. Flask
 will be installed when you start ``cerridwen-server`` for the
 first time.
 
@@ -63,7 +63,7 @@ start the API server if you wish:
   cerridwen-server
 
 It will start up in the foreground and listen on port 2828,
-serving moon data via HTTP in JSON format at the URI `/v1/moon`.
+serving moon data via HTTP in JSON format at the URI ``/v1/moon``.
 
 You can test it as follows:
 
@@ -81,10 +81,10 @@ Change the listen port by passing the ``-p`` switch to
 FAQ
 ---
 
-What's the guaranteed precision of the generated data?
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+What's the precision of the generated data?
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For new and full moons (and other angles) the maximum error does never exceed
+For new and full moons (and other angles) the maximum error never exceeds
 1/10^6, guaranteed by an assertion.
 
 
@@ -124,25 +124,6 @@ Donations are also welcome.
 Licensing
 ---------
 
-Cerridwen is distributed under the MIT license, as follows.
-
-Copyright (c) 2014 Leslie P. Polzer <leslie.polzer@gmx.net>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Cerridwen is distributed under the MIT license. See the file
+``LICENSE.txt`` in the source distribution for the full text.
 

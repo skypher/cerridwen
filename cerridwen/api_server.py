@@ -8,7 +8,7 @@ app = flask.Flask('Cerridwen API server')
 def emit_json(result):
     # Note: simplejson treats namedtuples as dicts by default but this is
     # one dep less.
-    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon', 'next_new_full_moon']:
+    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon', 'next_new_or_full_moon']:
         result[field] = result[field]._asdict()
     import json
     return json.dumps(result, indent=8)

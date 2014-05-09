@@ -471,7 +471,7 @@ def compute_moon_data(jd=jd_now()):
     result['speed_ratio'] = moon.speed_ratio()
     result['next_new_moon'] = moon.next_new_moon()
     result['next_full_moon'] = moon.next_full_moon()
-    result['next_new_full_moon'] = moon.next_new_or_full_moon()
+    result['next_new_or_full_moon'] = moon.next_new_or_full_moon()
 
     result['dignity'] = moon.dignity()
 

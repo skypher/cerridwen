@@ -8,7 +8,7 @@ README = open(os.path.join(here, 'README.rst')).read()
 #NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '1.0rc2'
+version = '1.0c4'
 
 setup(name='cerridwen',
       version=version,
