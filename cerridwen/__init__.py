@@ -63,6 +63,9 @@ class PlanetEvent():
         values = map(lambda name: getattr(self, name), fields)
         return collections.OrderedDict(zip(fields, values))
 
+    def __str__(self):
+        return '%s at %s' % (self.description, self.iso_date)
+
 class PlanetLongitude():
     def __init__(self, absolute_degrees):
         super(PlanetLongitude, self).__init__()
@@ -89,6 +92,10 @@ class PlanetLongitude():
         values = map(lambda name: getattr(self, name), fields)
         return collections.OrderedDict(zip(fields, values))
 
+    def __str__(self):
+        sign, deg, minutes = self.rel_tuple
+        return '%d %s %d\'' % (deg, sign[:3], minutes)
+
 class Planet:
     def __init__(self, planet_id, jd=jd_now()):
         self.id = planet_id
@@ -96,6 +103,9 @@ class Planet:
 
     def name(self):
         return sweph.get_planet_name(self.id)
+
+    def __str__(self):
+        return '%s at %s' % (self.name(), jd2iso(self.jd))
 
     def diameter(self, jd=None):
         """The apparent diameter of the planet, in arc minutes."""
@@ -133,7 +143,7 @@ class Planet:
 
     def is_stationing(self, jd=None):
         # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
-        # TODO: this is for Mercury, what about other planets?
+        # TODO: the link talks about Mercury, what about other planets?
         jd = jd or self.jd
         speed = self.speed()
         return math.fabs(speed) < 0.2
@@ -172,17 +182,33 @@ class Planet:
         #       of planets involved, if "auto".
         # TODO: honor orb
         assert(target_angle<360)
+
         if lookahead == "auto":
             lookahead = 40 # days
-        next_angles = self.angles_to_planet_within_period(planet, target_angle, jd, jd+lookahead)
-        if next_angles:
-            next_angle_jd = next_angles[0]['jd']
-            delta_jd = next_angle_jd - jd
-            angle_diff = mod360_fabs(target_angle, next_angles[0]['angle'])
-            assert angle_diff <= maximum_angle_distance, (target_angle, next_angles[0]['angle'], angle_diff)
-            return (next_angle_jd, delta_jd, angle_diff)
+
+        if lookahead >= 0:
+            jd_start = jd
+            jd_end = jd+lookahead
         else:
+            jd_start = jd+lookahead
+            jd_end = jd
+
+        next_angles = self.angles_to_planet_within_period(planet, target_angle, jd_start, jd_end)
+
+        if next_angles is None:
             return None
+
+        if lookahead < 0: # backwards search
+            next_angles.reverse()
+
+        next_angle_jd = next_angles[0]['jd']
+
+        delta_jd = next_angle_jd - jd
+        angle_diff = mod360_fabs(target_angle, next_angles[0]['angle'])
+
+        assert angle_diff <= maximum_angle_distance, (target_angle, next_angles[0]['angle'], angle_diff)
+
+        return (next_angle_jd, delta_jd, angle_diff)
 
     def angles_to_planet_within_period(self, planet, target_angle, jd_start,
                                        jd_end, sample_interval="auto",
@@ -299,14 +325,12 @@ class Moon(Planet):
             return None
 
     def age(self, jd=None):
-        raise NotImplementedError
         jd = jd or self.jd
-        #return jd - jd_last_new_moon
+        return jd - self.last_new_moon().jd
 
     def period_length(self, jd=None):
-        raise NotImplementedError
         jd = jd or self.jd
-        #return jd_next_new_moon - jd_last_new_moon
+        return self.next_new_moon().jd - self.last_new_moon().jd
 
     def phase(self, jd=None):
         jd = jd or self.jd
@@ -345,27 +369,19 @@ class Moon(Planet):
                 ['trend', 'shape', 'quarter', 'quarter_english'])
         return MoonPhaseData._make([trend, shape, quarter, quarter_english])
 
-    def last_new_moon(self, jd=None):
-        # TODO
-        raise NotImplementedError
-
     def next_new_moon(self, jd=None):
-        """
-        >>> math.floor(Moon(2456720.24305).next_new_moon().jd)
-        2456747
-        >>> math.floor(Moon(2456731.375).next_new_moon().jd * 1e6)
-        2456747281041
-        """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
         return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
+    def last_new_moon(self, jd=None):
+        jd = jd or self.jd
+        sun = Planet(sweph.SUN)
+        next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd, lookahead=-40)
+        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
+
     def next_full_moon(self, jd=None):
-        """
-        >>> math.floor(Moon(2456731.376389).next_full_moon().jd * 1e6)
-        2456733214123
-        """
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
@@ -476,10 +492,8 @@ def compute_moon_data(jd=jd_now()):
     return result
 
 def generate_moon_tables():
-    raise NotImplementedError
-
     import sqlite3
-    conn = sqlite3.connect('moon.db')
+    conn = sqlite3.connect('moon-events.db')
 
     moon = Moon()
     # idea sketch: start with previous new moon
@@ -490,9 +504,17 @@ def generate_moon_tables():
 
 if __name__ == '__main__':
     print('Running basic sanity tests.')
-    import doctest
-    doctest.testmod()
+    import nose
+    nose.run()
     print('Done.')
+
+    print('Now:', jd_now())
+
+    moon = Moon()
+    print(moon.next_new_moon().jd)
+    print(moon.last_new_moon())
+    print(moon.period_length())
+    print(moon.age())
 
     if debug_angle_finder:
         for i in range(1,100):
@@ -505,18 +527,15 @@ if __name__ == '__main__':
         sys.exit(1)
 
 # v1
-# rise, set (angle 0 to ac) -- last and next
-# new/full moon position
+# rise, set (angle 0/180 to ac) -- last and next
 
 # v1.1.0
-# last_new/last_full
 # use new/full moon tables
-# jd should be part of the Planet instance
+# lunation_number
  
 # LATER
 # latitude: when within band of the sun (David)
-# last_new last_full folk_names moon_in_year age period_length
-# lunation_number
+# last_new last_full folk_names moon_in_year
 
 # for diameter ratio see the numbers here:
 # http://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
@@ -529,4 +548,21 @@ if __name__ == '__main__':
 
 # events to subscribe to:
 # full, new, 1st quarter, 3rd quarter, sign change, void of course, aspect (one of subset X) to planet (one of subset Y)
+
+
+### TESTS ###
+from nose.tools import assert_almost_equal
+
+def test_age():
+    assert_almost_equal(Moon(2456794.949305556).age(), 18.1893445617)
+
+def test_period_length():
+    assert_almost_equal(Moon(2456794.949305556).period_length(), 29.5179542759)
+
+def test_next_new_moon():
+    pass
+    assert_almost_equal(Moon(2456794.9541666).next_new_moon().jd, 2456806.2779152701)
+
+def test_next_full_moon():
+    assert_almost_equal(Moon(2456731.376389).next_full_moon().jd, 2456733.2141231941)
 
