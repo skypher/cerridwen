@@ -1,5 +1,3 @@
-# TODO: license, classification (esp. topic) flask dep
-
 from setuptools import setup
 import os
 

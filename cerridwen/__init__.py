@@ -1,13 +1,11 @@
 #!/usr/bin/python3
 
-# license: GPL3
-
 # terminology note: "planet" is used in the astrological sense, i.e.
 # also for the sun, moon and asteroids.
 
 debug_angle_finder = 0
 
-maximum_angle_distance = 1e-6 # our guaranteed precision
+maximum_angle_distance = 1e-6 # our guaranteed maximum error
 
 import swisseph as sweph
 import time, calendar
@@ -529,6 +527,6 @@ if __name__ == '__main__':
 
 # http://starchild.gsfc.nasa.gov/docs/StarChild/questions/question5.html
 
-# events to subscribe:
+# events to subscribe to:
 # full, new, 1st quarter, 3rd quarter, sign change, void of course, aspect (one of subset X) to planet (one of subset Y)
 

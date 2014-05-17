@@ -1,15 +1,23 @@
 Cerridwen
 =========
 
-Cerridwen provides data on the moon that is suitable
-for both astronomical and astrological purposes. It
-comes with a simple command-line utility and a JSON
-server.
+Cerridwen provides data on the moon that is suitable for both astronomical
+and astrological purposes. It comes with a simple command-line utility and
+a JSON server, but is also designed to serve as a basis for your own
+application.
 
-The motivation for this package is to have a reliable
-open-source library and API that provides data on the
-moon and, eventually, other planetary bodies at a certain
-point in time.
+The motivation for this package is to have a reliable open-source library
+and API that provides data on the moon and, eventually, other planetary
+bodies at a certain point in time.
+
+You can see a demo of the JSON API at this address:
+
+::
+
+  http://cerridwen.viridian-project.de/api/v1/moon
+
+The current implementation caches data for 10 seconds.  Please let me know
+if you intend to use this for more than testing.
 
 
 .. contents::
@@ -85,7 +93,13 @@ What's the precision of the generated data?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 For new and full moons (and other angles) the maximum error never exceeds
-1/10^6, guaranteed by an assertion.
+10\ :sup:`-6`\ , guaranteed by an assertion.
+
+But please note that the current implementation of the API server uses
+memoization, generating a new response every 10 seconds only due to
+`efficiency considerations`__.
+
+__ efficiency_
 
 
 What zodiac is used for the longitudes?
@@ -107,6 +121,18 @@ Will you add more moon data?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Yes! For example equatorial latitude, lunation number and rise/set times.
+
+
+.. _efficiency:
+
+Hey, this stuff is slow!
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+You're right! At the moment the new and full moons are computed anew
+everytime, which is hard on CPU power. This will change radically with
+the next version of the module which will have a separate lookup table
+generation stage for these and other events. This will also pave the
+way for certain new features like the lunation number.
 
 
 How can I help?
