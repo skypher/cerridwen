@@ -38,10 +38,7 @@ def main():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
 
-    print('Running basic sanity tests for Cerridwen...')
-    import doctest
-    doctest.testmod(cerridwen, raise_on_error=True)
-    print('Done.')
+    cerridwen.quicktest()
 
     emit_text(cerridwen.compute_moon_data());
 

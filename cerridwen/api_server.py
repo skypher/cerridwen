@@ -3,6 +3,7 @@
 import cerridwen
 import flask
 import time
+import collections
 
 # http://code.activestate.com/recipes/325905-memoize-decorator-with-timeout/
 class MWT(object):
@@ -46,10 +47,12 @@ class MWT(object):
 app = flask.Flask('Cerridwen API server')
 
 def emit_json(result):
-    # Note: simplejson treats namedtuples as dicts by default but this is
-    # one dep less.
-    for field in ['position', 'sun', 'phase', 'next_new_moon', 'next_full_moon', 'next_new_or_full_moon']:
-        result[field] = result[field]._asdict()
+    for fieldname in result:
+        if isinstance(result[fieldname],
+                (cerridwen.PlanetEvent,
+                 cerridwen.PlanetLongitude,
+                 cerridwen.MoonPhaseData)):
+            result[fieldname] = result[fieldname]._asdict()
     import json
     return json.dumps(result, indent=8)
 
@@ -78,6 +81,8 @@ def main():
     parser = argparse.ArgumentParser(description="Cerridwen API Server")
     parser.add_argument("-p", "--port", type=int, default=2828, 
                         help="Port to listen to")
+    parser.add_argument("-t", "--test", action='store_true',
+                        help="Print data to stdout for testing")
     args = parser.parse_args()
 
     print('Running basic sanity tests for Cerridwen...')
@@ -85,8 +90,11 @@ def main():
     doctest.testmod(cerridwen, raise_on_error=True)
     print('Done.')
 
-    print('Starting Cerridwen API server on port %d.' % args.port)
-    start_api_server(port=args.port)
+    if args.test:
+        print(emit_json(cerridwen.compute_moon_data(long=13, lat=52)))
+    else:
+        print('Starting Cerridwen API server on port %d.' % args.port)
+        start_api_server(port=args.port)
 
 if __name__ == '__main__':
     main()

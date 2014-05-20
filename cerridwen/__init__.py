@@ -1,7 +1,8 @@
 #!/usr/bin/python3
 
 # terminology note: "planet" is used in the astrological sense, i.e.
-# also for the sun, moon and asteroids.
+# also for the sun, moon and asteroids. we also sometimes use
+# "planet" when the point in question is something like the AC.
 
 debug_angle_finder = 0
 
@@ -14,7 +15,12 @@ import numpy as np
 import collections
 
 import sys
+import os
 
+_ROOT = os.path.abspath(os.path.dirname(__file__))
+sweph_dir = os.path.join(_ROOT, '../sweph')
+
+sweph.set_ephe_path(sweph_dir)
 
 def jd_now():
     gmtime = time.gmtime()
@@ -40,13 +46,14 @@ signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
 
 traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
 
+MoonPhaseData = collections.namedtuple('MoonPhaseData', ['trend', 'shape', 'quarter', 'quarter_english'])
+
 # TODO: it would be nice to use recordtype (a mutable version of
 # collections.namedtuple) as base class here, but it doesn't work with
 # Python 3. See http://bit.ly/1qPmHn0 for the ignored pull request.
 
 class PlanetEvent():
     def __init__(self, description, jd):
-        super(PlanetEvent, self).__init__()
         self.description = description
         self.jd = jd
 
@@ -96,10 +103,36 @@ class PlanetLongitude():
         sign, deg, minutes = self.rel_tuple
         return '%d %s %d\'' % (deg, sign[:3], minutes)
 
+class Ascendant:
+    def __init__(self, long, lat, jd=jd_now()):
+        self.jd = jd
+        self.long = long
+        self.lat = lat
+
+    def name(self):
+        return 'Ascendant'
+
+    def __str__(self):
+        return '%s at %s' % (self.name(), jd2iso(self.jd))
+
+    def longitude(self, jd=None):
+        jd = jd or self.jd
+        return sweph.houses(jd, self.lat, self.long)[1][0]
+
+    def position(self, jd=None):
+        jd = jd or self.jd
+        return PlanetLongitude(self.longitude(jd))
+
+    def sign(self, jd=None):
+        jd = jd or self.jd
+        return self.position(jd).sign
+
 class Planet:
-    def __init__(self, planet_id, jd=jd_now()):
+    def __init__(self, planet_id, jd=jd_now(), long=None, lat=None):
         self.id = planet_id
         self.jd = jd
+        self.long = long
+        self.lat = lat
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -124,8 +157,7 @@ class Planet:
 
     def position(self, jd=None):
         jd = jd or self.jd
-        long = sweph.calc_ut(jd, self.id)[0]
-        return PlanetLongitude(long)
+        return PlanetLongitude(self.longitude(jd))
 
     def sign(self, jd=None):
         jd = jd or self.jd
@@ -159,17 +191,29 @@ class Planet:
         print(mod360_fabs(self.angle(sun, jd), 180))
         return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
 
-    def last_rise(self):
-        raise NotImplementedError
-
     def next_rise(self):
-        raise NotImplementedError
-
-    def last_set(self):
-        raise NotImplementedError
+        if self.long is None or self.lat is None:
+            raise ValueError('Rise/set times require observer longitude and latitude')
+        jd = sweph.rise_trans(self.jd, self.id, self.long, self.lat, rsmi=1)[1][0]
+        return PlanetEvent('%s rises' % self.name(), jd)
 
     def next_set(self):
-        raise NotImplementedError
+        if self.long is None or self.lat is None:
+            raise ValueError('Rise/set times require observer longitude and latitude')
+        jd = sweph.rise_trans(self.jd, self.id, self.long, self.lat, rsmi=2)[1][0]
+        return PlanetEvent('%s sets' % self.name(), jd)
+
+    def last_rise(self):
+        if self.long is None or self.lat is None:
+            raise ValueError('Rise/set times require observer longitude and latitude')
+        jd = sweph.rise_trans(self.jd-1, self.id, self.long, self.lat, rsmi=1)[1][0]
+        return PlanetEvent('%s rises' % self.name(), jd)
+
+    def last_set(self):
+        if self.long is None or self.lat is None:
+            raise ValueError('Rise/set times require observer longitude and latitude')
+        jd = sweph.rise_trans(self.jd-1, self.id, self.long, self.lat, rsmi=2)[1][0]
+        return PlanetEvent('%s sets' % self.name(), jd)
 
     def next_angle_to_planet(self, planet, target_angle, jd=None,
                              orb="auto", lookahead="auto"):
@@ -292,12 +336,12 @@ class Planet:
         return jd
 
 class Sun(Planet):
-    def __init__(self, jd=jd_now()):
-        super(Sun, self).__init__(sweph.SUN, jd)
+    def __init__(self, jd=jd_now(), long=None, lat=None):
+        super(Sun, self).__init__(sweph.SUN, jd, long, lat)
 
 class Moon(Planet):
-    def __init__(self, jd=jd_now()):
-        super(Moon, self).__init__(sweph.MOON, jd)
+    def __init__(self, jd=jd_now(), long=None, lat=None):
+        super(Moon, self).__init__(sweph.MOON, jd, long, lat)
 
     def speed_ratio(self, jd=None):
         # 11.6deg/d to 14.8deg/d
@@ -365,8 +409,6 @@ class Moon(Planet):
             trend = 'waning'
             shape = 'crescent'
 
-        MoonPhaseData = collections.namedtuple('MoonPhaseData',
-                ['trend', 'shape', 'quarter', 'quarter_english'])
         return MoonPhaseData._make([trend, shape, quarter, quarter_english])
 
     def next_new_moon(self, jd=None):
@@ -464,13 +506,23 @@ def render_delta_days(delta_days):
 
     return ' '.join(result);
 
-def compute_moon_data(jd=jd_now()):
+def compute_moon_data(jd=jd_now(), long=None, lat=None):
+    if (long is None and lat is not None) or (lat is None and long is not None):
+        raise ValueError("Specify both longitude and latitude or none")
+
+    if lat and long:
+        assert(-90 <= lat <= 90)
+        assert(-180 <= long <= 180)
+
     result = collections.OrderedDict()
 
     result['jd'] = jd
     result['iso_date'] = jd2iso(jd)
 
-    moon = Moon(jd)
+    if lat and long:
+        moon = Moon(jd, long=long, lat=lat)
+    else:
+        moon = Moon(jd)
     result['position'] = moon.position()
 
     sun = Sun(jd)
@@ -483,9 +535,20 @@ def compute_moon_data(jd=jd_now()):
     result['diameter_ratio'] = moon.diameter_ratio()
     result['speed'] = moon.speed()
     result['speed_ratio'] = moon.speed_ratio()
+    result['age'] = moon.age()
+    result['period_length'] = moon.period_length()
+
+    if lat and long:
+        result['next_rise'] = moon.next_rise()
+        result['next_set'] = moon.next_set()
+        result['last_rise'] = moon.last_rise()
+        result['last_set'] = moon.last_set()
+
     result['next_new_moon'] = moon.next_new_moon()
     result['next_full_moon'] = moon.next_full_moon()
     result['next_new_or_full_moon'] = moon.next_new_or_full_moon()
+    result['last_new_moon'] = moon.last_new_moon()
+    result['last_full_moon'] = moon.last_new_moon()
 
     result['dignity'] = moon.dignity()
 
@@ -502,19 +565,28 @@ def generate_moon_tables():
     # repeat for the future
     # repeat all this for full moon
 
-if __name__ == '__main__':
-    print('Running basic sanity tests.')
+def quicktest():
+    print('Cerridwen: running basic sanity tests.')
     import nose
     nose.run()
-    print('Done.')
+
+def main():
+    quicktest()
 
     print('Now:', jd_now())
 
-    moon = Moon()
+    print('AC (Berlin): ', Ascendant(13.3, 52.5).position())
+
+    moon = Moon(lat=13.3, long=52.5)
+    # TODO: rise/set tests
+    print('moon pos:', moon.position())
+    print('next rise:', moon.next_rise())
+    print('next set:', moon.next_set())
+    print('last rise:', moon.last_rise())
+    print('last set:', moon.last_set())
     print(moon.next_new_moon().jd)
     print(moon.last_new_moon())
     print(moon.period_length())
-    print(moon.age())
 
     if debug_angle_finder:
         for i in range(1,100):
@@ -526,16 +598,14 @@ if __name__ == '__main__':
             print(jd2iso(full[0]), full[2])
         sys.exit(1)
 
-# v1
-# rise, set (angle 0/180 to ac) -- last and next
-
 # v1.1.0
 # use new/full moon tables
 # lunation_number
  
 # LATER
 # latitude: when within band of the sun (David)
-# last_new last_full folk_names moon_in_year
+# folk_names moon_in_year
+# tidal acceleration
 
 # for diameter ratio see the numbers here:
 # http://en.wikipedia.org/wiki/Angular_diameter#Use_in_astronomy
@@ -550,19 +620,28 @@ if __name__ == '__main__':
 # full, new, 1st quarter, 3rd quarter, sign change, void of course, aspect (one of subset X) to planet (one of subset Y)
 
 
-### TESTS ###
+### QUICK TESTS ###
 from nose.tools import assert_almost_equal
 
+# misc
 def test_age():
-    assert_almost_equal(Moon(2456794.949305556).age(), 18.1893445617)
+    assert_almost_equal(Moon(2456794.949305556).age(), 18.189345157705247)
 
 def test_period_length():
-    assert_almost_equal(Moon(2456794.949305556).period_length(), 29.5179542759)
+    assert_almost_equal(Moon(2456794.949305556).period_length(), 29.517968974076211)
 
+# new/full moons
 def test_next_new_moon():
-    pass
-    assert_almost_equal(Moon(2456794.9541666).next_new_moon().jd, 2456806.2779152701)
+    assert_almost_equal(Moon(2456794.9541666).next_new_moon().jd, 2456806.2779293722)
 
 def test_next_full_moon():
-    assert_almost_equal(Moon(2456731.376389).next_full_moon().jd, 2456733.2141231941)
+    assert_almost_equal(Moon(2456731.376389).next_full_moon().jd, 2456733.2141234726)
 
+# sun/moon rise/set
+# compared with data generated by
+#   http://aa.usno.navy.mil/data/docs/RS_OneYear.php (Form B, long=13E, lat=52N)
+def test_rise_set():
+    assert Moon(2456798.22, long=13, lat=52).next_rise().iso_date == "2014-05-20T23:37:17Z"
+
+if __name__ == '__main__':
+    main()

@@ -92,8 +92,10 @@ FAQ
 What's the precision of the generated data?
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-For new and full moons (and other angles) the maximum error never exceeds
-10\ :sup:`-6`\ , guaranteed by an assertion.
+For new and full moons (and other angles) the maximum error allowed by
+Cerridwen's calculations never exceeds 10\ :sup:`-6`\  degrees, guaranteed
+by an assertion. This translates to 0.0036 arc seconds. The target precision
+of the underlying ephemeris library is 0.001 arc seconds.
 
 But please note that the current implementation of the API server uses
 memoization, generating a new response every 10 seconds only due to
