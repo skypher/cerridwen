@@ -58,10 +58,21 @@ def emit_json(result):
 
 def start_api_server(port):
     @app.route("/v1/moon")
-
     @MWT(timeout=10)
-    def json_api():
-        result = emit_json(cerridwen.compute_moon_data())
+    def moon_endpoint(request):
+        try:
+            latitude = flask.request.args.get('latitude')
+            if latitude:
+                latitude = float(latitude)
+            longitude = flask.request.args.get('longitude')
+            if longitude:
+                longitude = float(longitude)
+        except ValueError as e:
+            status = 400
+            return flask.make_response(str(e), status)
+
+        result = emit_json(cerridwen.compute_moon_data(long=longitude, lat=latitude))
+
         status = 200
         response = flask.make_response(result, status)
         response.headers['Access-Control-Allow-Origin'] = '*'
@@ -71,6 +82,27 @@ def start_api_server(port):
         #response.headers['Expires'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
         #last_modified_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
         #response.headers['Last-Modified'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
+        return response
+
+    @app.route("/v1/sun")
+    def sun_endpoint():
+        try:
+            latitude = flask.request.args.get('latitude')
+            if latitude:
+                latitude = float(latitude)
+            longitude = flask.request.args.get('longitude')
+            if longitude:
+                longitude = float(longitude)
+        except ValueError as e:
+            status = 400
+            return flask.make_response(str(e), status)
+
+        result = emit_json(cerridwen.compute_sun_data(long=longitude, lat=latitude))
+
+        status = 200
+        response = flask.make_response(result, status)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Content-type'] = 'text/json'
         return response
 
     app.debug = True
