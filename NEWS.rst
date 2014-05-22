@@ -1,5 +1,5 @@
 1.1.0
-=====
+^^^^^
 
 * Swiss Ephemeris data files are now included in the package
 
@@ -7,7 +7,7 @@
 
 * Add a lot of functions (e.g. rise/set times)
 
-* Cerridwen-server: new switch --test/-t for quick testing
+* cerridwen-server: new switch --test/-t for quick testing
 
 * Various minor amendments and changes
 
@@ -15,6 +15,6 @@
 
 
 1.0.0
-=====
+^^^^^
 
 Initial release.

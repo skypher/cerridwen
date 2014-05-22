@@ -7,7 +7,8 @@ a JSON server, but is also designed to serve as a basis for your own
 application.
 
 .. contents::
-   :depth: 1
+   :depth: 2
+   :local:
 
 The motivation for this package is to have a reliable open-source library
 and API that provides data on the moon and, eventually, other planetary

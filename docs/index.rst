@@ -3,16 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to Cerridwen's documentation!
-=====================================
-
-Contents:
-
-.. toctree::
-   :maxdepth: 2
-
 .. include:: ../README.rst
-   end-before: Documentation
+   :end-before: Documentation
 
 
 Requirements
@@ -111,9 +103,9 @@ Even 1$ helps.
 Contributing
 ------------
 
-Cerridwen's codebase is on GitHub, at skypher\/cerridwen_.
+Cerridwen's codebase is on GitHub, at `skypher/cerridwen`_.
 
-.. _skypher\/cerridwen: https://github.com/skypher/cerridwen
+.. _skypher/cerridwen: https://github.com/skypher/cerridwen
 
 Feel free to browse, fork and submit patches and bug reports.
 
@@ -125,9 +117,10 @@ If you need help, you can also write to me at <leslie.polzer@gmx.net>.
 Licensing
 ---------
 
-Cerridwen is distributed under the MIT license. See the file
-``LICENSE.txt`` in the source distribution for the full text,
-or the main documentation.
+Cerridwen is distributed under the MIT license:
+
+.. include:: ../LICENSE.txt
+   :literal:
 
 
 Changelog
