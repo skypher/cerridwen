@@ -1,9 +1,15 @@
 1.1.0
 =====
 
-* use nose instead of doctest for quick sanity tests
-* add a lot of functions (e.g. rise/set times)
-* misc. amendments and changes
+* Swiss Ephemeris data files are now included in the package
+
+* Use nose instead of doctest for quick sanity tests
+
+* Add a lot of functions (e.g. rise/set times)
+
+* Cerridwen-server: new switch --test/-t for quick testing
+
+* Various minor amendments and changes
 
 
 1.0.0
