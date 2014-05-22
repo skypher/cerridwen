@@ -11,6 +11,8 @@
 
 * Various minor amendments and changes
 
+* New sun data computation function and API endpoint
+
 
 1.0.0
 =====

@@ -6,45 +6,39 @@ and astrological purposes. It comes with a simple command-line utility and
 a JSON server, but is also designed to serve as a basis for your own
 application.
 
+.. contents::
+   :depth: 1
+
 The motivation for this package is to have a reliable open-source library
 and API that provides data on the moon and, eventually, other planetary
 bodies at a certain point in time.
 
-You can see a demo of the JSON API at this address:
+
+Demo server
+-----------
+
+Take a good look first! :-)
+
+You can check out a demo of the JSON API at this address:
 
 ::
 
   http://cerridwen.viridian-project.de/api/v1/moon
 
-The current implementation caches data for 10 seconds.  Please let me know
-if you intend to use this for more than testing.
+The current implementation of this API endpoint caches data for 10 seconds.
+In any case please let me know if you intend to use this for more than testing.
 
+Starting with version 1.1.0 there's also another endpoint with sun data:
 
-.. contents::
-   :depth: 1
+::
 
-
-Requirements
-------------
-
-Cerridwen depends on Python 3. You might be able to make
-it work with Python 2 as well. Patches welcome! Please let
-me know if there's a version of Python 3 that does not
-run Cerridwen properly.
-
-It also depends on these packages:
-
-* pyswisseph, the Python interface to the Swiss Ephemeris library
-
-* numpy, which Cerridwen uses for its ephemeris calculations
-
-* Flask, if you wish to run Cerridwen's API server
-
-These dependencies will be installed automatically as needed.
+  http://cerridwen.viridian-project.de/api/v1/sun
 
 
 Quickstart
 ----------
+
+Are you hooked by now? ;-)
 
 Installation via pip is very simple. Here are some command
 lines to get you started:
@@ -86,9 +80,16 @@ Change the listen port by passing the ``-p`` switch to
 ``cerridwen-server``, followed by the desired port.
 
 
+Documentation
+-------------
+
+Cerridwen's full documentation can be found at readthedocs
+
+
 Licensing
 ---------
 
 Cerridwen is distributed under the MIT license. See the file
-``LICENSE.txt`` in the source distribution for the full text.
+``LICENSE.txt`` in the source distribution for the full text,
+or the main documentation.
 
