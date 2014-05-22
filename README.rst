@@ -84,7 +84,7 @@ Change the listen port by passing the ``-p`` switch to
 Documentation
 -------------
 
-Cerridwen's full documentation can be found at readthedocs
+Cerridwen's full documentation can be found at http://cerridwen.readthedocs.org/
 
 
 Licensing
