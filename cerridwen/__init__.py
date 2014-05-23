@@ -430,19 +430,25 @@ class Moon(Planet):
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
-        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('Upcoming new moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def last_new_moon(self, jd=None):
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd, lookahead=-40)
-        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('Preceding new moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_full_moon(self, jd=None):
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
-        return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('Upcoming full moon in ' + self.sign(next_angle_jd), next_angle_jd)
+
+    def last_full_moon(self, jd=None):
+        jd = jd or self.jd
+        sun = Planet(sweph.SUN)
+        next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd, lookahead=-40)
+        return PlanetEvent('Preceding full moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_new_or_full_moon(self, jd=None):
         # TODO optimize
@@ -589,7 +595,7 @@ def compute_moon_data(jd=jd_now(), long=None, lat=None):
     result['next_full_moon'] = moon.next_full_moon()
     result['next_new_or_full_moon'] = moon.next_new_or_full_moon()
     result['last_new_moon'] = moon.last_new_moon()
-    result['last_full_moon'] = moon.last_new_moon()
+    result['last_full_moon'] = moon.last_full_moon()
 
     if lat and long:
         result['next_rise'] = moon.next_rise()

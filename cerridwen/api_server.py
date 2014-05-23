@@ -59,7 +59,7 @@ def emit_json(result):
 def start_api_server(port):
     @app.route("/v1/moon")
     @MWT(timeout=10)
-    def moon_endpoint(request):
+    def moon_endpoint():
         try:
             latitude = flask.request.args.get('latitude')
             if latitude:
