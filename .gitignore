@@ -6,3 +6,4 @@ cerridwen.egg-info
 dist
 build
 attic
+docs/_build
