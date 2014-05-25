@@ -7,8 +7,8 @@ a JSON server, but is also designed to serve as a basis for your own
 application.
 
 The motivation for this package is to have a reliable open-source library
-and API that provides data on the moon and, eventually, other planetary
-bodies at a certain point in time.
+and API that provides comprehensive data on various planetary bodies and
+factors at a certain point in time.
 
 
 Features

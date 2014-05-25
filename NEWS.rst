@@ -1,5 +1,5 @@
 1.1.0
-^^^^^
+=====
 
 * Swiss Ephemeris data files are now included in the package
 
@@ -15,6 +15,6 @@
 
 
 1.0.0
-^^^^^
+=====
 
 Initial release.
