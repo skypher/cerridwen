@@ -29,6 +29,10 @@ def jd_now():
                         gmtime.tm_mday,
                         gmtime.tm_hour+((gmtime.tm_min * 100 / 60) / 100))
 
+def jd_from_iso(iso):
+    "TODO. Use sweph.julday for now."
+    raise NotImplementedError
+
 def mod360_fabs(a, b):
     """fabs for a,b in mod(360)"""
     # Surprisingly enough there doesn't seem to be a more elegant way.
@@ -62,7 +66,8 @@ class PlanetEvent():
         return jd2iso(self.jd)
 
     @property
-    def delta_days(self, rel_jd=jd_now()):
+    def delta_days(self, rel_jd=None):
+        rel_jd = rel_jd or jd_now()
         return self.jd - rel_jd
 
     def _asdict(self):
@@ -104,7 +109,8 @@ class PlanetLongitude():
         return '%d %s %d\'' % (deg, sign[:3], minutes)
 
 class Ascendant:
-    def __init__(self, long, lat, jd=jd_now()):
+    def __init__(self, long, lat, jd=None):
+        jd = jd or jd_now()
         self.jd = jd
         self.long = long
         self.lat = lat
@@ -128,7 +134,8 @@ class Ascendant:
         return self.position(jd).sign
 
 class Planet:
-    def __init__(self, planet_id, jd=jd_now(), long=None, lat=None):
+    def __init__(self, planet_id, jd=None, long=None, lat=None):
+        jd = jd or jd_now()
         self.id = planet_id
         self.jd = jd
         self.long = long
@@ -336,7 +343,8 @@ class Planet:
         return jd
 
 class Sun(Planet):
-    def __init__(self, jd=jd_now(), long=None, lat=None):
+    def __init__(self, jd=None, long=None, lat=None):
+        jd = jd or jd_now()
         super(Sun, self).__init__(sweph.SUN, jd, long, lat)
 
     def dignity(self, jd=None):
@@ -355,7 +363,8 @@ class Sun(Planet):
             return None
 
 class Moon(Planet):
-    def __init__(self, jd=jd_now(), long=None, lat=None):
+    def __init__(self, jd=None, long=None, lat=None):
+        jd = jd or jd_now()
         super(Moon, self).__init__(sweph.MOON, jd, long, lat)
 
     def speed_ratio(self, jd=None):
@@ -527,7 +536,9 @@ def render_delta_days(delta_days):
 
     return ' '.join(result);
 
-def compute_sun_data(jd=jd_now(), long=None, lat=None):
+def compute_sun_data(jd=None, long=None, lat=None):
+    jd = jd or jd_now()
+
     if (long is None and lat is not None) or (lat is None and long is not None):
         raise ValueError("Specify both longitude and latitude or none")
 
@@ -558,7 +569,9 @@ def compute_sun_data(jd=jd_now(), long=None, lat=None):
     return result
 
 
-def compute_moon_data(jd=jd_now(), long=None, lat=None):
+def compute_moon_data(jd=None, long=None, lat=None):
+    jd = jd or jd_now()
+
     if (long is None and lat is not None) or (lat is None and long is not None):
         raise ValueError("Specify both longitude and latitude or none")
 
