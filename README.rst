@@ -33,3 +33,6 @@ Documentation
 
 Cerridwen's full documentation can be found at http://cerridwen.readthedocs.org/
 
+.. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
+    :target: https://travis-ci.org/skypher/cerridwen
+
