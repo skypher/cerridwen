@@ -134,12 +134,11 @@ class Ascendant:
         return self.position(jd).sign
 
 class Planet:
-    def __init__(self, planet_id, jd=None, long=None, lat=None):
+    def __init__(self, planet_id, jd=None, observer=None):
         jd = jd or jd_now()
         self.id = planet_id
         self.jd = jd
-        self.long = long
-        self.lat = lat
+        self.observer = observer
 
     def name(self):
         return sweph.get_planet_name(self.id)
@@ -199,27 +198,27 @@ class Planet:
         return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
 
     def next_rise(self):
-        if self.long is None or self.lat is None:
+        if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd, self.id, self.long, self.lat, rsmi=1)[1][0]
+        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=1)[1][0]
         return PlanetEvent('%s rises' % self.name(), jd)
 
     def next_set(self):
-        if self.long is None or self.lat is None:
+        if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd, self.id, self.long, self.lat, rsmi=2)[1][0]
+        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=2)[1][0]
         return PlanetEvent('%s sets' % self.name(), jd)
 
     def last_rise(self):
-        if self.long is None or self.lat is None:
+        if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd-1, self.id, self.long, self.lat, rsmi=1)[1][0]
+        jd = sweph.rise_trans(self.jd-1, self.id, self.observer.long, self.observer.lat, rsmi=1)[1][0]
         return PlanetEvent('%s rises' % self.name(), jd)
 
     def last_set(self):
-        if self.long is None or self.lat is None:
+        if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd-1, self.id, self.long, self.lat, rsmi=2)[1][0]
+        jd = sweph.rise_trans(self.jd-1, self.id, self.observer.long, self.observer.lat, rsmi=2)[1][0]
         return PlanetEvent('%s sets' % self.name(), jd)
 
     def next_angle_to_planet(self, planet, target_angle, jd=None,
@@ -343,9 +342,9 @@ class Planet:
         return jd
 
 class Sun(Planet):
-    def __init__(self, jd=None, long=None, lat=None):
+    def __init__(self, jd=None, observer=None):
         jd = jd or jd_now()
-        super(Sun, self).__init__(sweph.SUN, jd, long, lat)
+        super(Sun, self).__init__(sweph.SUN, jd, observer)
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
@@ -363,9 +362,9 @@ class Sun(Planet):
             return None
 
 class Moon(Planet):
-    def __init__(self, jd=None, long=None, lat=None):
+    def __init__(self, jd=None, observer=None):
         jd = jd or jd_now()
-        super(Moon, self).__init__(sweph.MOON, jd, long, lat)
+        super(Moon, self).__init__(sweph.MOON, jd, observer)
 
     def speed_ratio(self, jd=None):
         # 11.6deg/d to 14.8deg/d
@@ -536,25 +535,24 @@ def render_delta_days(delta_days):
 
     return ' '.join(result);
 
-def compute_sun_data(jd=None, long=None, lat=None):
+class LatLong():
+    def __init__(self, lat, long):
+        if lat > 90 or lat < -90:
+            raise ValueError("Latitude must be between -90 and 90")
+        if long > 180 or long < -180:
+            raise ValueError("Longitude must be between -180 and 180")
+        self.lat = lat
+        self.long = long
+
+def compute_sun_data(jd=None, observer=None):
     jd = jd or jd_now()
-
-    if (long is None and lat is not None) or (lat is None and long is not None):
-        raise ValueError("Specify both longitude and latitude or none")
-
-    if lat and long:
-        assert(-90 <= lat <= 90)
-        assert(-180 <= long <= 180)
 
     result = collections.OrderedDict()
 
     result['jd'] = jd
     result['iso_date'] = jd2iso(jd)
 
-    if lat and long:
-        sun = Sun(jd, long=long, lat=lat)
-    else:
-        sun = Sun(jd)
+    sun = Sun(jd, observer)
 
     result['position'] = sun.position()
 
@@ -569,25 +567,16 @@ def compute_sun_data(jd=None, long=None, lat=None):
     return result
 
 
-def compute_moon_data(jd=None, long=None, lat=None):
+def compute_moon_data(jd=None, observer=None):
     jd = jd or jd_now()
-
-    if (long is None and lat is not None) or (lat is None and long is not None):
-        raise ValueError("Specify both longitude and latitude or none")
-
-    if lat and long:
-        assert(-90 <= lat <= 90)
-        assert(-180 <= long <= 180)
 
     result = collections.OrderedDict()
 
     result['jd'] = jd
     result['iso_date'] = jd2iso(jd)
 
-    if lat and long:
-        moon = Moon(jd, long=long, lat=lat)
-    else:
-        moon = Moon(jd)
+    moon = Moon(jd, observer)
+
     result['position'] = moon.position()
 
     sun = Sun(jd)
@@ -685,7 +674,7 @@ def main():
 
 
 ### QUICK TESTS ###
-from nose.tools import assert_almost_equal
+from nose.tools import assert_equal, assert_almost_equal
 
 # misc
 def test_age():
@@ -705,8 +694,9 @@ def test_next_full_moon():
 # compared with data generated by
 #   http://aa.usno.navy.mil/data/docs/RS_OneYear.php (Form B, long=13E, lat=52N)
 def test_rise_set():
-    assert Moon(2456798.2, long=13, lat=52).next_rise().iso_date == "2014-05-20T23:37:17Z"
-    assert Sun(2456799.9, long=13, lat=52).next_rise().iso_date == "2014-05-23T03:03:04Z" 
+    obs = LatLong(52, 13)
+    assert_equal(Moon(2456798.2, obs).next_rise().iso_date, "2014-05-20T23:37:17Z")
+    assert_equal(Sun(2456799.9, obs).next_rise().iso_date, "2014-05-23T03:03:04Z")
 
 if __name__ == '__main__':
     main()

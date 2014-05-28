@@ -56,22 +56,25 @@ def emit_json(result):
     import json
     return json.dumps(result, indent=8)
 
-def start_api_server(port):
+def start_api_server(port=None, debug=False):
     @app.route("/v1/moon")
     @MWT(timeout=10)
     def moon_endpoint():
         try:
-            latitude = flask.request.args.get('latitude')
-            if latitude:
-                latitude = float(latitude)
-            longitude = flask.request.args.get('longitude')
-            if longitude:
-                longitude = float(longitude)
+            lat = flask.request.args.get('latitude')
+            if lat:
+                lat = float(latitude)
+            long = flask.request.args.get('longitude')
+            if long:
+                long = float(long)
+            if (long is None and lat is not None) or (lat is None and long is not None):
+                raise ValueError("Specify both longitude and latitude or none")
+            latlong = LatLong(latitude, longitude)
         except ValueError as e:
             status = 400
             return flask.make_response(str(e), status)
 
-        result = emit_json(cerridwen.compute_moon_data(long=longitude, lat=latitude))
+        result = emit_json(cerridwen.compute_moon_data(latlong=latlong)
 
         status = 200
         response = flask.make_response(result, status)
@@ -105,8 +108,7 @@ def start_api_server(port):
         response.headers['Content-type'] = 'text/json'
         return response
 
-    app.debug = True
-    app.run(port=port)
+    app.run(port=port, debug=debug)
 
 def main():
     import argparse
@@ -115,6 +117,9 @@ def main():
                         help="Port to listen to")
     parser.add_argument("-t", "--test", action='store_true',
                         help="Print data to stdout for testing")
+    parser.add_argument("-d", "--debug", action='store_true',
+                        help="Run in debug mode (provides debugger, " +
+                             "automatically reloads changed code)")
     args = parser.parse_args()
 
     print('Running basic sanity tests for Cerridwen...')
@@ -126,7 +131,7 @@ def main():
         print(emit_json(cerridwen.compute_moon_data(long=13, lat=52)))
     else:
         print('Starting Cerridwen API server on port %d.' % args.port)
-        start_api_server(port=args.port)
+        start_api_server(port=args.port, debug=args.debug)
 
 if __name__ == '__main__':
     main()
