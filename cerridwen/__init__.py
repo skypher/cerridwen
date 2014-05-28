@@ -558,7 +558,7 @@ def compute_sun_data(jd=None, observer=None):
 
     result['dignity'] = sun.dignity()
 
-    if lat and long:
+    if observer:
         result['next_rise'] = sun.next_rise()
         result['next_set'] = sun.next_set()
         result['last_rise'] = sun.last_rise()
@@ -599,7 +599,7 @@ def compute_moon_data(jd=None, observer=None):
     result['last_new_moon'] = moon.last_new_moon()
     result['last_full_moon'] = moon.last_full_moon()
 
-    if lat and long:
+    if observer:
         result['next_rise'] = moon.next_rise()
         result['next_set'] = moon.next_set()
         result['last_rise'] = moon.last_rise()

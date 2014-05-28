@@ -60,21 +60,26 @@ def start_api_server(port=None, debug=False):
     @app.route("/v1/moon")
     @MWT(timeout=10)
     def moon_endpoint():
+        latlong = None
         try:
             lat = flask.request.args.get('latitude')
             if lat:
-                lat = float(latitude)
+                lat = float(lat)
             long = flask.request.args.get('longitude')
             if long:
                 long = float(long)
             if (long is None and lat is not None) or (lat is None and long is not None):
                 raise ValueError("Specify both longitude and latitude or none")
-            latlong = LatLong(latitude, longitude)
+            if lat and long:
+                latlong = cerridwen.LatLong(lat, long)
         except ValueError as e:
             status = 400
-            return flask.make_response(str(e), status)
+            response = flask.make_response(str(e), status)
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Content-type'] = 'text/plain'
+            return response
 
-        result = emit_json(cerridwen.compute_moon_data(latlong=latlong)
+        result = emit_json(cerridwen.compute_moon_data(observer=latlong))
 
         status = 200
         response = flask.make_response(result, status)
@@ -89,18 +94,26 @@ def start_api_server(port=None, debug=False):
 
     @app.route("/v1/sun")
     def sun_endpoint():
+        latlong = None
         try:
-            latitude = flask.request.args.get('latitude')
-            if latitude:
-                latitude = float(latitude)
-            longitude = flask.request.args.get('longitude')
-            if longitude:
-                longitude = float(longitude)
+            lat = flask.request.args.get('latitude')
+            if lat:
+                lat = float(lat)
+            long = flask.request.args.get('longitude')
+            if long:
+                long = float(long)
+            if (long is None and lat is not None) or (lat is None and long is not None):
+                raise ValueError("Specify both longitude and latitude or none")
+            if lat and long:
+                latlong = cerridwen.LatLong(lat, long)
         except ValueError as e:
             status = 400
-            return flask.make_response(str(e), status)
+            response = flask.make_response(str(e), status)
+            response.headers['Access-Control-Allow-Origin'] = '*'
+            response.headers['Content-type'] = 'text/plain'
+            return response
 
-        result = emit_json(cerridwen.compute_sun_data(long=longitude, lat=latitude))
+        result = emit_json(cerridwen.compute_sun_data(observer=latlong))
 
         status = 200
         response = flask.make_response(result, status)
