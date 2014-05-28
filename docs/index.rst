@@ -21,7 +21,8 @@ factors at a certain point in time.
    precision
    changelog
    licensing
-   api
+   module-api
+   http-api
 
 
 Indices and tables
