@@ -43,9 +43,6 @@ class MWT(object):
         
         return func
 
-
-app = flask.Flask('Cerridwen API server')
-
 def emit_json(result):
     for fieldname in result:
         if isinstance(result[fieldname],
@@ -56,71 +53,74 @@ def emit_json(result):
     import json
     return json.dumps(result, indent=8)
 
+
+app = flask.Flask('Cerridwen API server')
+
+@app.route("/v1/moon")
+@MWT(timeout=10)
+def moon_endpoint():
+    latlong = None
+    try:
+        lat = flask.request.args.get('latitude')
+        if lat:
+            lat = float(lat)
+        long = flask.request.args.get('longitude')
+        if long:
+            long = float(long)
+        if (long is None and lat is not None) or (lat is None and long is not None):
+            raise ValueError("Specify both longitude and latitude or none")
+        if lat and long:
+            latlong = cerridwen.LatLong(lat, long)
+    except ValueError as e:
+        status = 400
+        response = flask.make_response(str(e), status)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Content-type'] = 'text/plain'
+        return response
+
+    result = emit_json(cerridwen.compute_moon_data(observer=latlong))
+
+    status = 200
+    response = flask.make_response(result, status)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Content-type'] = 'text/json'
+    #response.headers['Cache-Control'] = 'public, max-age=10, s-maxage=10'
+    #expiry_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
+    #response.headers['Expires'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    #last_modified_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
+    #response.headers['Last-Modified'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    return response
+
+@app.route("/v1/sun")
+def sun_endpoint():
+    latlong = None
+    try:
+        lat = flask.request.args.get('latitude')
+        if lat:
+            lat = float(lat)
+        long = flask.request.args.get('longitude')
+        if long:
+            long = float(long)
+        if (long is None and lat is not None) or (lat is None and long is not None):
+            raise ValueError("Specify both longitude and latitude or none")
+        if lat and long:
+            latlong = cerridwen.LatLong(lat, long)
+    except ValueError as e:
+        status = 400
+        response = flask.make_response(str(e), status)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Content-type'] = 'text/plain'
+        return response
+
+    result = emit_json(cerridwen.compute_sun_data(observer=latlong))
+
+    status = 200
+    response = flask.make_response(result, status)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Content-type'] = 'text/json'
+    return response
+
 def start_api_server(port=None, debug=False):
-    @app.route("/v1/moon")
-    @MWT(timeout=10)
-    def moon_endpoint():
-        latlong = None
-        try:
-            lat = flask.request.args.get('latitude')
-            if lat:
-                lat = float(lat)
-            long = flask.request.args.get('longitude')
-            if long:
-                long = float(long)
-            if (long is None and lat is not None) or (lat is None and long is not None):
-                raise ValueError("Specify both longitude and latitude or none")
-            if lat and long:
-                latlong = cerridwen.LatLong(lat, long)
-        except ValueError as e:
-            status = 400
-            response = flask.make_response(str(e), status)
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Content-type'] = 'text/plain'
-            return response
-
-        result = emit_json(cerridwen.compute_moon_data(observer=latlong))
-
-        status = 200
-        response = flask.make_response(result, status)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Content-type'] = 'text/json'
-        #response.headers['Cache-Control'] = 'public, max-age=10, s-maxage=10'
-        #expiry_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
-        #response.headers['Expires'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
-        #last_modified_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
-        #response.headers['Last-Modified'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
-        return response
-
-    @app.route("/v1/sun")
-    def sun_endpoint():
-        latlong = None
-        try:
-            lat = flask.request.args.get('latitude')
-            if lat:
-                lat = float(lat)
-            long = flask.request.args.get('longitude')
-            if long:
-                long = float(long)
-            if (long is None and lat is not None) or (lat is None and long is not None):
-                raise ValueError("Specify both longitude and latitude or none")
-            if lat and long:
-                latlong = cerridwen.LatLong(lat, long)
-        except ValueError as e:
-            status = 400
-            response = flask.make_response(str(e), status)
-            response.headers['Access-Control-Allow-Origin'] = '*'
-            response.headers['Content-type'] = 'text/plain'
-            return response
-
-        result = emit_json(cerridwen.compute_sun_data(observer=latlong))
-
-        status = 200
-        response = flask.make_response(result, status)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Content-type'] = 'text/json'
-        return response
-
     app.run(port=port, debug=debug)
 
 def main():
