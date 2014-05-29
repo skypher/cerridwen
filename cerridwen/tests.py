@@ -1,7 +1,9 @@
+import cerridwen.api_server
+
 from cerridwen import Moon, Sun, LatLong
 
-### QUICK TESTS ###
 from nose.tools import assert_equal, assert_almost_equal
+import unittest
 
 # misc
 def test_age():
@@ -24,3 +26,19 @@ def test_rise_set():
     obs = LatLong(52, 13)
     assert_equal(Moon(2456798.2, obs).next_rise().iso_date, "2014-05-20T23:37:17Z")
     assert_equal(Sun(2456799.9, obs).next_rise().iso_date, "2014-05-23T03:03:04Z")
+
+class HTTP_TestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = cerridwen.api_server.app.test_client()
+
+    def simple_sun_test(self):
+        response = self.app.get('/v1/sun')
+        self.assertEqual(response.status_code, 200)
+
+    def simple_moon_test(self):
+        response = self.app.get('/v1/moon')
+        self.assertEqual(response.status_code, 200)
+
+    def root_404(self):
+        response = self.app.get('/')
+        self.assertEqual(response.status_code, 404)
