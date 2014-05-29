@@ -102,17 +102,6 @@ HTTP API
                               0.4599054380045686
                       ]
               }, 
-              "sun": {
-                      "absolute_degrees": 67.02687672861734, 
-                      "sign": "Gemini", 
-                      "deg": 7.026876728617339, 
-                      "min": 1.6126037170403151, 
-                      "rel_tuple": [
-                              "Gemini", 
-                              7.026876728617339, 
-                              1.6126037170403151
-                      ]
-              }, 
               "phase": {
                       "trend": "waning", 
                       "shape": "crescent", 

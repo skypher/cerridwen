@@ -194,7 +194,6 @@ class Planet:
         # TODO also return an indicator of whether it is growing or shrinking.
         jd = jd or self.jd
         sun = Planet(sweph.SUN)
-        print(mod360_fabs(self.angle(sun, jd), 180))
         return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
 
     def next_rise(self):
@@ -578,9 +577,6 @@ def compute_moon_data(jd=None, observer=None):
     moon = Moon(jd, observer)
 
     result['position'] = moon.position()
-
-    sun = Sun(jd)
-    result['sun'] = sun.position()
 
     result['phase'] = moon.phase()
     result['illumination'] = moon.illumination()

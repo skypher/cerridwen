@@ -13,8 +13,8 @@ def emit_text(result):
     sign, deg, minutes = result['position'].rel_tuple
     print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
 
-    sign, deg, minutes = result['sun'].rel_tuple
-    print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
+    #sign, deg, minutes = result['sun'].rel_tuple
+    #print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
 
     trend, shape, quarter, quarter_english = result['phase']
     phase = trend + ' ' + shape
@@ -38,7 +38,7 @@ def main():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
 
-    cerridwen.quicktest()
+    #cerridwen.quicktest()
 
     emit_text(cerridwen.compute_moon_data());
 
