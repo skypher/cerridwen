@@ -5,6 +5,10 @@ HTTP API
 
    Get data on the Sun.
 
+   :query date: reference date, in Julian day decimal format
+                (e.g. `238490.123`) or an ISO8601 time string
+                supported by :ref:`astropy.time <astropy:astropy-time>`
+                (e.g. `2014-05-20T23:37:17`)
    :query latitude: observer's latitude (decimal, optional)
    :query longitude: observer's longitude (decimal, optional)
    :statuscode 200: success
@@ -77,12 +81,13 @@ HTTP API
 
 .. http:get:: /v1/moon
 
-   Like the sun endpoint, but includes a lot more data that only makes
-   sense for the moon.
+   Like the sun endpoint, but includes a lot more data in the response
+   that only makes sense for the moon.
 
    **Example request**:
 
-   Get moon data for the current moment, including rise and set times for Berlin.
+   Get moon data for the current moment, including rise and set times for the
+   Berlin area of Germany.
 
    URI: http://cerridwen.viridian-project.de/api/v1/sun?latitude=52.5&longitude=13.3
    

@@ -33,7 +33,7 @@ These functions provide Julian day conversions and printable output.
 
 .. autofunction:: jd_now
 
-.. autofunction:: jd_from_iso
+.. autofunction:: iso2jd
 
 .. autofunction:: jd2iso
 

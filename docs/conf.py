@@ -264,4 +264,7 @@ texinfo_documents = [
 # If true, do not generate a @detailmenu in the "Top" node's menu.
 #texinfo_no_detailmenu = False
 
-intersphinx_mapping = {'py': ('http://docs.python.org/3.3', None)}
+intersphinx_mapping = {
+    'py': ('http://docs.python.org/3.3', None),
+    'astropy': ('http://astropy.readthedocs.org/en/latest/', None)
+}
