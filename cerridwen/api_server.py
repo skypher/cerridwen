@@ -70,7 +70,12 @@ def make_response(data, status):
 @MWT(timeout=10)
 def moon_endpoint():
     latlong = None
+    jd = cerridwen.jd_now()
     try:
+        date = flask.request.args.get('date')
+        if date:
+            jd = cerridwen.parse_jd_or_iso_date(date)
+
         lat = flask.request.args.get('latitude')
         if lat:
             lat = float(lat)
@@ -84,14 +89,19 @@ def moon_endpoint():
     except ValueError as e:
         return make_response(e, 400)
 
-    result = emit_json(cerridwen.compute_moon_data(observer=latlong))
+    result = emit_json(cerridwen.compute_moon_data(jd=jd, observer=latlong))
 
     return make_response(result, 200)
 
 @app.route("/v1/sun")
 def sun_endpoint():
     latlong = None
+    jd = cerridwen.jd_now()
     try:
+        date = flask.request.args.get('date')
+        if date:
+            jd = cerridwen.parse_jd_or_iso_date(date)
+
         lat = flask.request.args.get('latitude')
         if lat:
             lat = float(lat)
@@ -105,7 +115,7 @@ def sun_endpoint():
     except ValueError as e:
         return make_response(e, 400)
 
-    result = emit_json(cerridwen.compute_sun_data(observer=latlong))
+    result = emit_json(cerridwen.compute_sun_data(jd=jd, observer=latlong))
 
     return make_response(result, 200)
 
