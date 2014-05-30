@@ -1,3 +1,15 @@
+1.2.0
+=====
+
+* Use astropy for time conversions
+
+* Vast documentation update
+
+* Extend test suite
+
+* Remove sun data from moon endpoint response
+
+
 1.1.0
 =====
 
