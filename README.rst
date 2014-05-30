@@ -36,3 +36,13 @@ Cerridwen's full documentation can be found at http://cerridwen.readthedocs.org/
 .. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
     :target: https://travis-ci.org/skypher/cerridwen
 
+
+Stability
+---------
+
+Cerridwen includes a basic test suite for its calculations and API.
+
+At this time the API is reasonably stable but may change without
+warning. Please let me know when you need better API stability for
+your project.
+

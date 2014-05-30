@@ -56,6 +56,16 @@ def emit_json(result):
 
 app = flask.Flask('Cerridwen API server')
 
+def make_response(data, status):
+    # TODO: if returning an error message, append a newline.
+    response = flask.make_response(str(data), status)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    if status == 200:
+        response.headers['Content-type'] = 'application/json'
+    else:
+        response.headers['Content-type'] = 'text/plain'
+    return response
+
 @app.route("/v1/moon")
 @MWT(timeout=10)
 def moon_endpoint():
@@ -72,24 +82,11 @@ def moon_endpoint():
         if lat and long:
             latlong = cerridwen.LatLong(lat, long)
     except ValueError as e:
-        status = 400
-        response = flask.make_response(str(e), status)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Content-type'] = 'text/plain'
-        return response
+        return make_response(e, 400)
 
     result = emit_json(cerridwen.compute_moon_data(observer=latlong))
 
-    status = 200
-    response = flask.make_response(result, status)
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Content-type'] = 'text/json'
-    #response.headers['Cache-Control'] = 'public, max-age=10, s-maxage=10'
-    #expiry_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
-    #response.headers['Expires'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
-    #last_modified_time = datetime.datetime.utcnow() + datetime.timedelta(0,10)
-    #response.headers['Last-Modified'] = expiry_time.strftime("%a, %d %b %Y %H:%M:%S GMT")
-    return response
+    return make_response(result, 200)
 
 @app.route("/v1/sun")
 def sun_endpoint():
@@ -106,19 +103,11 @@ def sun_endpoint():
         if lat and long:
             latlong = cerridwen.LatLong(lat, long)
     except ValueError as e:
-        status = 400
-        response = flask.make_response(str(e), status)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Content-type'] = 'text/plain'
-        return response
+        return make_response(e, 400)
 
     result = emit_json(cerridwen.compute_sun_data(observer=latlong))
 
-    status = 200
-    response = flask.make_response(result, status)
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Content-type'] = 'text/json'
-    return response
+    return make_response(result, 200)
 
 def start_api_server(port=None, debug=False):
     app.run(port=port, debug=debug)

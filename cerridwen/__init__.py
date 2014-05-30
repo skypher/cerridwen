@@ -630,7 +630,7 @@ def main():
 
     print('AC (Berlin): ', Ascendant(13.3, 52.5).position())
 
-    moon = Moon(lat=13.3, long=52.5)
+    moon = Moon(observer=LatLong(52.5, 13.3))
     # TODO: rise/set tests
     print('moon pos:', moon.position())
     print('next rise:', moon.next_rise())
