@@ -9,7 +9,7 @@ debug_angle_finder = 0
 maximum_angle_distance = 1e-6 # our guaranteed maximum error
 
 import swisseph as sweph
-import time, calendar
+import time, calendar, astropy.time
 import math
 import numpy as np
 import collections
@@ -23,15 +23,25 @@ sweph_dir = os.path.join(_ROOT, '../sweph')
 sweph.set_ephe_path(sweph_dir)
 
 def jd_now():
-    gmtime = time.gmtime()
-    return sweph.julday(gmtime.tm_year,
-                        gmtime.tm_mon,
-                        gmtime.tm_mday,
-                        gmtime.tm_hour+((gmtime.tm_min * 100 / 60) / 100))
+    return astropy.time.Time.now().jd
 
-def jd_from_iso(iso):
-    "TODO. Use sweph.julday for now."
-    raise NotImplementedError
+def iso2jd(iso):
+    return astropy.time.Time(iso, scale='utc').jd
+                        
+# TODO: strftime probably is not very reliable
+def jd2iso(jd):
+    """Convert a Julian date into an ISO 8601 date string representation"""
+    return astropy.time.Time(jd, format='jd', scale='utc', precision=0).iso
+
+def parse_jd_or_iso_date(date):
+    for format in ['jd', 'iso', 'isot']:
+        try:
+            return astropy.time.Time(date, format=format, scale='utc').jd
+        except ValueError:
+            continue
+    raise ValueError('Please pass the date as either a Julian Day decimal string ' +
+                     '(e.g. "2456799.9897") or as an ISO8601 string denoting a UTC ' +
+                     'time in this format: 2014-05-20 23:37:17.')
 
 def mod360_fabs(a, b):
     """fabs for a,b in mod(360)"""
@@ -500,13 +510,6 @@ def days_frac_to_dhms(days_frac):
     seconds = math.floor((minutes_frac - minutes / 1440) * 86400)
 
     return (days, hours, minutes, seconds)
-
-def jd2iso(jd):
-    """Convert jd into an ISO 8601 string representation"""
-    year, month, day, hour_frac = sweph.revjul(jd)
-    _, hours, minutes, seconds = days_frac_to_dhms(hour_frac/24)
-    time_ = calendar.timegm((year,month,day,hours,minutes,seconds,0,0,0))
-    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time_))
 
 def render_pretty_time(jd):
     """Convert jd into a pretty string representation"""
