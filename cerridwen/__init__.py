@@ -537,6 +537,8 @@ def render_delta_days(delta_days):
 
     return ' '.join(result);
 
+# TODO use astropy.coordinates.EarthLocation instead, when it's
+# available (v0.4)
 class LatLong():
     def __init__(self, lat, long):
         if lat > 90 or lat < -90:
@@ -547,6 +549,16 @@ class LatLong():
         self.long = long
 
 def compute_sun_data(jd=None, observer=None):
+    """Collect data for the sun.
+
+     :param jd: reference date as Julian day, defaults to :func:`jd_now`
+     :type jd: float or None
+     :param observer: pass the observer position to have the output
+                      include rise and set times.
+     :type observer: LatLong or None
+     :returns: a collection of sun data
+     :rtype: OrderedDict
+     """
     jd = jd or jd_now()
 
     result = collections.OrderedDict()
@@ -570,6 +582,16 @@ def compute_sun_data(jd=None, observer=None):
 
 
 def compute_moon_data(jd=None, observer=None):
+    """Collect data for the moon.
+
+     :param jd: reference date as Julian day, defaults to :func:`jd_now`
+     :type jd: float or None
+     :param observer: pass the observer position to have the output
+                      include rise and set times.
+     :type observer: LatLong or None
+     :returns: a collection of sun data
+     :rtype: OrderedDict
+     """
     jd = jd or jd_now()
 
     result = collections.OrderedDict()
@@ -671,6 +693,13 @@ def main():
 
 # events to subscribe to:
 # full, new, 1st quarter, 3rd quarter, sign change, void of course, aspect (one of subset X) to planet (one of subset Y)
+
+# LATER:
+# use astropy.time.Time everywhere
+# use astropy.coordinates.EarthLocation (astropy 0.4)
+#
+# merge compute_*_data functions into one
+
 
 if __name__ == '__main__':
     main()
