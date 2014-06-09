@@ -59,6 +59,16 @@ class HTTP_TestCase(unittest.TestCase):
         response = self.app.get('/v1/moon')
         self.assertEqual(response.status_code, 200)
 
+    def jd_date_test(self):
+        response = self.app.get('/v1/sun?date=2456805.9347222224')
+        print(response)
+        self.assertEqual(response.status_code, 200)
+
+    def bogus_date_test(self):
+        response = self.app.get('/v1/sun?date=jumble81923')
+        print(response)
+        self.assertEqual(response.status_code, 400)
+
     def root_404(self):
         response = self.app.get('/')
         self.assertEqual(response.status_code, 404)

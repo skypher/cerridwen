@@ -36,7 +36,8 @@ def jd2iso(jd):
 def parse_jd_or_iso_date(date):
     for format in ['jd', 'iso', 'isot']:
         try:
-            return astropy.time.Time(date, format=format, scale='utc').jd
+            return astropy.time.Time(float(date) if format == 'jd' else date,
+                    format=format, scale='utc').jd
         except ValueError:
             continue
     raise ValueError('Please pass the date as either a Julian Day decimal string ' +
