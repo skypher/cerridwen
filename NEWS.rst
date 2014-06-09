@@ -1,3 +1,15 @@
+Only major releases are documented here.
+
+
+1.3.0
+=====
+* Add arc seconds to relative position
+
+* Add right ascension, declination and ecliptical latitude
+
+* Refurbish cli.py
+
+
 1.2.0
 =====
 
