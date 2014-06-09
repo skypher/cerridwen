@@ -103,20 +103,32 @@ class PlanetLongitude():
 
     @property
     def min(self):
-        return ((self.deg % 1) * 100) * 60 / 100
+        return (self.deg % 1) * 60
+
+    @property
+    def sec(self):
+        return ((self.deg % 1) * 60 - math.floor(self.min)) * 60
 
     @property
     def rel_tuple(self):
-        return (self.sign, self.deg, self.min)
+        """Return a tuple with fixed order consisting of sign, degrees,
+        arc minutes and seconds, with the latter three being truncated
+        (or rounded down) integers.
+        
+        This is basically a convenience function for printing."""
+        return (self.sign,
+                math.floor(self.deg),
+                math.floor(self.min),
+                math.floor(self.sec))
 
     def _asdict(self):
-        fields = ['absolute_degrees', 'sign', 'deg', 'min', 'rel_tuple']
+        fields = ['absolute_degrees', 'sign', 'deg', 'min', 'sec', 'rel_tuple']
         values = map(lambda name: getattr(self, name), fields)
         return collections.OrderedDict(zip(fields, values))
 
     def __str__(self):
-        sign, deg, minutes = self.rel_tuple
-        return '%d %s %d\'' % (deg, sign[:3], minutes)
+        sign, deg, min, sec = self.rel_tuple
+        return '%d %s %d\' %d"' % (deg, sign[:3], min, sec)
 
 class Ascendant:
     def __init__(self, long, lat, jd=None):
@@ -162,13 +174,32 @@ class Planet:
         return sweph.pheno_ut(jd, self.id)[3] * 60
 
     def longitude(self, jd=None):
+        "Ecliptical longitude of planet"
         jd = jd or self.jd
-        long = sweph.calc_ut(jd, self.id)[0]
+        long = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0]
         return long
+
+    def latitude(self, jd=None):
+        "Ecliptical latitude of planet"
+        jd = jd or self.jd
+        lat = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[1]
+        return lat
+
+    def rectascension(self, jd=None):
+        jd = jd or self.jd
+        flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
+        ra = sweph.calc_ut(jd, self.id, flags)[0]
+        return ra
+
+    def declination(self, jd=None):
+        jd = jd or self.jd
+        flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
+        dec = sweph.calc_ut(jd, self.id, flags)[1]
+        return dec
 
     def distance(self, jd=None):
         jd = jd or self.jd
-        distance = sweph.calc_ut(jd, self.id)[2]
+        distance = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[2]
         return distance
 
     def position(self, jd=None):
@@ -495,9 +526,9 @@ class Moon(Planet):
         return 0
 
 def days_frac_to_dhms(days_frac):
-    """Convert a day float to integer days, hours and minutes.
+    """Convert a day float to integer days, hours, minutes and seconds.
 
-    Returns a tuple (days, hours, minutes).
+    Returns a tuple (days, hours, minutes, seconds).
     
     >>> days_frac_to_dhms(2.5305)
     (2, 12, 43, 55)
@@ -699,6 +730,9 @@ def main():
 # use astropy.coordinates.EarthLocation (astropy 0.4)
 #
 # merge compute_*_data functions into one
+#
+# lunar standstills
+# moon out of sun's declination band
 
 
 if __name__ == '__main__':

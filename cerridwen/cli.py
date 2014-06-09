@@ -4,17 +4,21 @@ import cerridwen
 
 import time
 
-def emit_text(result):
-    # TODO build string and return
+def emit_time_info(result):
     print('Julian day:', result['jd'])
     print('Universal time (UTC):', result['iso_date'])
     print('Local time:', time.asctime())
 
-    sign, deg, minutes = result['position'].rel_tuple
-    print('Moon: %d %s %d\'' % (deg, sign[:3], minutes))
+def emit_sun_text(result):
+    sign, deg, min, sec = result['position'].rel_tuple
+    print('Sun: %f / %d %s %d\' %d"' % (result['position'].absolute_degrees,
+        deg, sign[:3], min, sec))
 
-    #sign, deg, minutes = result['sun'].rel_tuple
-    #print('Sun: %d %s %d\'' % (deg, sign[:3], minutes))
+def emit_moon_text(result):
+    sign, deg, min, sec = result['position'].rel_tuple
+    print('Moon: %f / %d %s %d\' %d"' % (result['position'].absolute_degrees,
+        deg, sign[:3], min, sec))
+
 
     trend, shape, quarter, quarter_english = result['phase']
     phase = trend + ' ' + shape
@@ -40,7 +44,10 @@ def main():
 
     #cerridwen.quicktest()
 
-    emit_text(cerridwen.compute_moon_data());
+    sun_data = cerridwen.compute_sun_data()
+    emit_time_info(sun_data)
+    emit_sun_text(sun_data)
+    emit_moon_text(cerridwen.compute_moon_data())
 
 if __name__ == '__main__':
     main()

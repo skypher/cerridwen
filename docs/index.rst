@@ -1,7 +1,7 @@
 Cerridwen
 =========
 
-Cerridwen provides data on the moon that is suitable for both astronomical
+Cerridwen provides solar system data that is suitable for both astronomical
 and astrological purposes. It comes with a simple command-line utility and
 a JSON server, but is also designed to serve as a basis for your own
 application.

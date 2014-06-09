@@ -97,6 +97,7 @@ def moon_endpoint():
 def sun_endpoint():
     latlong = None
     jd = cerridwen.jd_now()
+
     try:
         date = flask.request.args.get('date')
         if date:
@@ -140,7 +141,7 @@ def main():
     print('Done.')
 
     if args.test:
-        print(emit_json(cerridwen.compute_moon_data(long=13, lat=52)))
+        print(emit_json(cerridwen.compute_moon_data(observer=cerridwen.LatLong(52, 13))))
     else:
         print('Starting Cerridwen API server on port %d.' % args.port)
         start_api_server(port=args.port, debug=args.debug)

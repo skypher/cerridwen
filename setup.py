@@ -6,16 +6,16 @@ README = open(os.path.join(here, 'README.rst')).read()
 #NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '1.2.0'
+version = '1.3.0'
 
 setup(name='cerridwen',
       version=version,
-      description='Planetary data library and API server',
+      description='Accurate solar system data for everyone',
       long_description=README,
       author='Leslie P. Polzer',
       author_email='leslie.polzer@gmx.net',
-      url='',
-      license='Apache',
+      url='http://cerridwen.viridian-project.de/',
+      license='MIT',
       classifiers=[
         # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
         "Development Status :: 4 - Beta"
