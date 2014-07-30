@@ -241,6 +241,9 @@ class Planet:
         speed = sweph.calc_ut(jd, self.id)[3]
         return speed
 
+    def max_speed(self):
+        raise NotImplementedError
+
     def is_rx(self, jd=None):
         jd = jd or self.jd
         speed = self.speed(jd)
@@ -288,19 +291,21 @@ class Planet:
         return PlanetEvent('%s sets' % self.name(), jd)
 
     def next_angle_to_planet(self, planet, target_angle, jd=None,
-                             orb="auto", lookahead="auto"):
+                             orb="auto", lookahead="auto", sample_interval="auto",
+                             passes="auto"):
         jd = jd or self.jd
         """Return (jd, delta_jd) indicating the time of the next target_angle
         to a planet.
         Return None if no result could be found in the requested lookahead
         period."""
-        # TODO: set lookahead, sampling_interval and orb according to the speed
-        #       of planets involved, if "auto".
-        # TODO: honor orb
         assert(target_angle<360)
 
+        #if self.max_speed() < planet.max_speed():
+        #    raise ValueError('Target planet must move slower than primary planet ' +
+        #                     'or undefined behavior will result')
+
         if lookahead == "auto":
-            lookahead = 40 # days
+            lookahead = min(self.aspect_lookahead(), planet.aspect_lookahead())
 
         if lookahead >= 0:
             jd_start = jd
@@ -309,7 +314,11 @@ class Planet:
             jd_start = jd+lookahead
             jd_end = jd
 
-        next_angles = self.angles_to_planet_within_period(planet, target_angle, jd_start, jd_end)
+        next_angles = self.angles_to_planet_within_period(planet, target_angle,
+                                                          jd_start, jd_end,
+                                                          sample_interval=sample_interval,
+                                                          passes=passes,
+                                                          orb=orb)
 
         if next_angles is None:
             return None
@@ -328,10 +337,18 @@ class Planet:
 
     def angles_to_planet_within_period(self, planet, target_angle, jd_start,
                                        jd_end, sample_interval="auto",
-                                       passes=8):
+                                       passes="auto", orb="auto"):
+        # TODO let user specify precision and whether only the first match is
+        # interesting. then limit the number of passes accordingly.
+        # TODO: set orb according to the planets involved, if "auto".
         assert(target_angle<360)
+        if passes == "auto":
+            passes = 8
         if sample_interval == "auto":
-            sample_interval = 1/20 # days
+            sample_interval = self.default_sample_interval()
+        if orb == "auto":
+            orb = 2
+        assert(orb>=0)
         if debug_angle_finder:
             print('atpwp (:=%d deg): start=%f (%s), end=%f (%s), interval=%f, '
                   'sample_pass=%d'
@@ -364,6 +381,12 @@ class Planet:
             jd_end = jd_ends[i]
             angle_start = angle_at_jd(jd_start)
             angle_end = angle_at_jd(jd_end)
+            # the following filter is necessary when Rx motion is involved.
+            # a sufficiently small orb ensures that we can identify the
+            # interesting local minima and forget about the other ones.
+            if (mod360_fabs(angle_start, target_angle) > orb and
+                mod360_fabs(angle_end, target_angle) > orb):
+                   continue
             match = {'jd_start':jd_start, 'jd_end':jd_end,
                      'angle_start': angle_start,
                      'angle_end': angle_end}
@@ -402,6 +425,24 @@ class Planet:
 
         return refined_matches
 
+    def mean_orbital_period(self):
+        raise NotImplementedError
+
+    def relative_orbital_velocity(self):
+        """Orbital velocity, relative to Earth's."""
+        raise NotImplementedError
+
+    def average_motion_per_year(self):
+        """Average motion per year in degrees.
+        cf. http://www.auxmaillesgodefroy.com/planet_speeds"""
+        raise NotImplementedError
+
+    def aspect_lookahead(self):
+        # TODO depends on aspect
+        raise NotImplementedError
+
+    def default_sample_interval(self):
+        return 1 / (self.max_speed() * 3)
 
     def sign_change_lookahead(self):
         raise NotImplementedError
@@ -425,6 +466,9 @@ class Sun(Planet):
         jd = jd or jd_now()
         super(Sun, self).__init__(sweph.SUN, jd, observer)
 
+    def max_speed(self):
+        return 1.0197676
+
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
         jd = jd or self.jd
@@ -443,6 +487,16 @@ class Sun(Planet):
     def sign_change_lookahead(self):
         return 35
 
+    def aspect_lookahead(self):
+        return 365 * 2.5 # roughly max time to conjunction/opposition with Mars
+
+    def average_motion_per_year(self):
+        return 360
+
+    def mean_orbital_period(self):
+        # http://hpiers.obspm.fr/eop-pc/models/constants.html
+        return 365.256363004
+
 class Moon(Planet):
     def __init__(self, jd=None, observer=None):
         jd = jd or jd_now()
@@ -450,6 +504,19 @@ class Moon(Planet):
 
     def sign_change_lookahead(self):
         return 2.7
+
+    def aspect_lookahead(self):
+        return 40 
+
+    def mean_orbital_period(self):
+        # http://hpiers.obspm.fr/eop-pc/models/constants.html
+        return 27.32166155
+
+    def average_motion_per_year(self):
+        return 360 * 12 + 120
+
+    def max_speed(self):
+        return 15.3882655
 
     def speed_ratio(self, jd=None):
         # 11.76/d to 15.33deg/d
@@ -580,6 +647,193 @@ class Moon(Planet):
         raise NotImplementedError
         jd = jd or self.jd
         return 0
+
+class Mercury(Planet):
+    def __init__(self, jd=None, observer=None):
+        jd = jd or jd_now()
+        super(Mercury, self).__init__(sweph.MERCURY, jd, observer)
+
+    def max_speed(self):
+        return 2.2026512
+
+    def sign_change_lookahead(self):
+        # cf. http://www.keen.com/CommunityServer/UserBlogPosts/MaryAnneT/THE-PLANETS-IN-ORDER-OF-SPEED/513406.aspx
+        return 75
+
+    def aspect_lookahead(self):
+        return 365 * 2.5 
+
+    def dignity(self, jd=None):
+        """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
+        sign = self.sign(jd)
+        if sign == 'Gemini':
+            return 'rulership'
+        elif sign == 'Virgo':
+            return 'rulership/exaltation'
+        elif sign == 'Sagittarius':
+            return 'fall'
+        elif sign == 'Pisces':
+            return 'fall/detriment'
+        else:
+            return None
+
+    def mean_orbital_period(self):
+        return 87.9691
+
+    def average_motion_per_year(self):
+        return 360
+
+class Venus(Planet):
+    def __init__(self, jd=None, observer=None):
+        jd = jd or jd_now()
+        super(Venus, self).__init__(sweph.VENUS, jd, observer)
+
+    def max_speed(self):
+        return 1.2598435
+
+    def dignity(self, jd=None):
+        """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
+        sign = self.sign(jd)
+        if sign == 'Libra':
+            return 'rulership'
+        if sign == 'Taurus':
+            return 'rulership'
+        elif sign == 'Pisces':
+            return 'exaltation'
+        elif sign == 'Virgo':
+            return 'detriment'
+        elif sign == 'Aries':
+            return 'fall'
+        elif sign == 'Scorpio':
+            return 'fall'
+        else:
+            return None
+
+    def sign_change_lookahead(self):
+        return 150
+
+    def aspect_lookahead(self):
+        return 365 * 2.5 # roughly max time to conjunction/opposition with Mars
+
+    def average_motion_per_year(self):
+        return 360
+
+
+class Mars(Planet):
+    def __init__(self, jd=None, observer=None):
+        jd = jd or jd_now()
+        super(Mars, self).__init__(sweph.MARS, jd, observer)
+
+    def max_speed(self):
+        return 0.7913920
+
+    def dignity(self, jd=None):
+        """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
+        sign = self.sign(jd)
+        if sign == 'Aries':
+            return 'rulership'
+        if sign == 'Scorpio':
+            return 'rulership'
+        elif sign == 'Capricorn':
+            return 'exaltation'
+        elif sign == 'Cancer':
+            return 'detriment'
+        elif sign == 'Libra':
+            return 'fall'
+        elif sign == 'Taurus':
+            return 'fall'
+        else:
+            return None
+
+    def sign_change_lookahead(self):
+        # Hopefully enough. FIXME: What is the maximum time for Mars
+        # to be in a sign when exhibiting retrograde motion?
+        # Its Rx in Libra in 2014 had it stay about 8 months, December to
+        # and including July.
+        return 30 * 10
+
+    def aspect_lookahead(self):
+        return 365 * 2.5 # roughly max time to conjunction/opposition with Jupiter
+
+    def average_motion_per_year(self):
+        return 180
+
+
+class Jupiter(Planet):
+    def __init__(self, jd=None, observer=None):
+        jd = jd or jd_now()
+        super(Jupiter, self).__init__(sweph.JUPITER, jd, observer)
+
+    def max_speed(self):
+        return 0.2423810
+
+    def dignity(self, jd=None):
+        """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
+        sign = self.sign(jd)
+        if sign == 'Sagittarius':
+            return 'rulership'
+        if sign == 'Pisces':
+            return 'rulership'
+        elif sign == 'Cancer':
+            return 'exaltation'
+        elif sign == 'Capricorn':
+            return 'detriment'
+        elif sign == 'Gemini':
+            return 'fall'
+        elif sign == 'Virgo':
+            return 'fall'
+        else:
+            return None
+
+    def sign_change_lookahead(self):
+        return 365 * 1.5 # should be ample enough.
+
+    def aspect_lookahead(self):
+        # https://en.wikipedia.org/wiki/Great_conjunction#Great_Conjunctions_in_ecliptical_longitude_between_1800_and_2100
+        return 365 * 23 # roughly max time to conjunction/opposition with Saturn
+
+    def average_motion_per_year(self):
+        return 30
+
+class Saturn(Planet):
+    def __init__(self, jd=None, observer=None):
+        jd = jd or jd_now()
+        super(Saturn, self).__init__(sweph.SATURN, jd, observer)
+
+    def max_speed(self):
+        return 0.1308402
+
+    def dignity(self, jd=None):
+        """Return the dignity of the planet at jd, or None."""
+        jd = jd or self.jd
+        sign = self.sign(jd)
+        if sign == 'Capricorn':
+            return 'rulership'
+        if sign == 'Aquarius':
+            return 'rulership'
+        elif sign == 'Libra':
+            return 'exaltation'
+        elif sign == 'Aries':
+            return 'detriment'
+        elif sign == 'Cancer':
+            return 'fall'
+        elif sign == 'Leo':
+            return 'fall'
+        else:
+            return None
+
+    def sign_change_lookahead(self):
+        return 365 * 3.5
+
+    def aspect_lookahead(self):
+        return 365 * 30 + 365 * 40 # to Chiron
+
+    def average_motion_per_year(self):
+        return 12
 
 def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours, minutes and seconds.
