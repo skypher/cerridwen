@@ -42,6 +42,10 @@ def test_parse_date_valid_iso():
     parse_jd_or_iso_date("2014-05-20T23:37:17")
     parse_jd_or_iso_date("2014-05-20 23:37:17")
 
+def test_next_sign_change():
+    nsc = Moon(2456867.914486644).next_sign_change()
+    assert_equal(jd2iso(nsc), '2014-07-31 16:09:11')
+    assert_sequence_equal(Moon(nsc).position().rel_tuple, ('Libra', 0, 0, 0))
 
 def test_angle_finder():
     # TODO need more of those

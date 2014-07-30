@@ -156,6 +156,31 @@ class Ascendant:
         jd = jd or self.jd
         return self.position(jd).sign
 
+class FixedZodiacPoint:
+    def __init__(self, degrees):
+        self.degrees = degrees
+
+    def name(self):
+        return 'Fixed zodiac point at %f degrees (%s)' % (self.degrees, self.position)
+
+    def __str__(self):
+        return '%s' % self.name()
+
+    def longitude(self, jd=None):
+        return self.degrees
+
+    def position(self, jd=None):
+        return PlanetLongitude(self.longitude())
+
+    def sign(self, jd=None):
+        return self.position().sign
+
+    def max_speed(self):
+        return 0
+
+    def aspect_lookahead(self):
+        return 10**10 # "infinity"
+
 class Planet:
     def __init__(self, planet_id, jd=None, observer=None):
         jd = jd or jd_now()
@@ -377,10 +402,19 @@ class Planet:
 
         return refined_matches
 
+
+    def sign_change_lookahead(self):
+        raise NotImplementedError
+
     def next_sign_change(self, jd=None):
-        # TODO
         jd = jd or self.jd
-        return jd
+        next_sign_idx = (signs.index(self.sign(jd)) + 1) % 12
+        planet = FixedZodiacPoint(next_sign_idx * 30)
+        result_jd = self.next_angle_to_planet(planet, 0, jd, lookahead=self.sign_change_lookahead(), sample_interval=1/20)
+        assert(result_jd is not None)
+        # we nudge the result a bit to the right to make sure it's in the
+        # new sign. otherwise functions like time_left_in_sign get confused.
+        return result_jd[0] + maximum_angle_distance
 
     def time_left_in_sign(self, jd=None):
         jd = jd or self.jd
@@ -406,10 +440,16 @@ class Sun(Planet):
         else:
             return None
 
+    def sign_change_lookahead(self):
+        return 35
+
 class Moon(Planet):
     def __init__(self, jd=None, observer=None):
         jd = jd or jd_now()
         super(Moon, self).__init__(sweph.MOON, jd, observer)
+
+    def sign_change_lookahead(self):
+        return 2.7
 
     def speed_ratio(self, jd=None):
         # 11.76/d to 15.33deg/d
