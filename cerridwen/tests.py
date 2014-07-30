@@ -41,7 +41,7 @@ def test_parse_date_valid_iso():
 
 @raises(ValueError)
 def test_parse_date_invalid_1():
-    parse_jd_or_iso_date("2014-05-20T23:37:17Z")
+    parse_jd_or_iso_date("2014-05-20T23:37:17X")
 
 @raises(ValueError)
 def test_parse_date_invalid_2():
