@@ -235,7 +235,7 @@ class Planet:
     def illumination(self, jd=None):
         # TODO also return an indicator of whether it is growing or shrinking.
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
 
     def next_rise(self):
@@ -325,6 +325,7 @@ class Planet:
         matching_jds = jds[sign_changes]
 
         if matching_jds.size < 2:
+            # no local minimum at all
             return None
 
         matches = []
@@ -336,11 +337,15 @@ class Planet:
         for i in range(start_end_pairs):
             jd_start = jd_starts[i]
             jd_end = jd_ends[i]
+            angle_start = angle_at_jd(jd_start)
+            angle_end = angle_at_jd(jd_end)
             match = {'jd_start':jd_start, 'jd_end':jd_end,
-                     'angle_start': angle_at_jd(jd_start),
-                     'angle_end': angle_at_jd(jd_end)}
+                     'angle_start': angle_start,
+                     'angle_end': angle_end}
             if debug_angle_finder:
-                print('match:', match)
+                print('match: time range %s to %s, angle range %f to %f' %
+                        (jd2iso(jd_start), jd2iso(jd_end),
+                         angle_start, angle_end))
             matches.append(match);
 
         def match_mean(match):
@@ -378,9 +383,8 @@ class Planet:
         return jd
 
     def time_left_in_sign(self, jd=None):
-        # TODO
         jd = jd or self.jd
-        return jd
+        return self.next_sign_change(jd) - jd
 
 class Sun(Planet):
     def __init__(self, jd=None, observer=None):
@@ -397,8 +401,8 @@ class Sun(Planet):
             return 'exaltation'
         elif sign == 'Libra':
             return 'detriment'
-        elif sign == 'Scorpio':
-            return 'Aquarius'
+        elif sign == 'Aquarius':
+            return 'fall'
         else:
             return None
 
@@ -408,9 +412,9 @@ class Moon(Planet):
         super(Moon, self).__init__(sweph.MOON, jd, observer)
 
     def speed_ratio(self, jd=None):
-        # 11.6deg/d to 14.8deg/d
+        # 11.76/d to 15.33deg/d
         jd = jd or self.jd
-        return (self.speed(jd) - 11.6) / 3.2
+        return (self.speed(jd) - 11.76) / 3.57
 
     def diameter_ratio(self, jd=None):
         # 29.3' to 34.1'
@@ -442,7 +446,7 @@ class Moon(Planet):
 
     def phase(self, jd=None):
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         angle = self.angle(sun, jd)
 
         quarter = None
@@ -477,27 +481,27 @@ class Moon(Planet):
 
     def next_new_moon(self, jd=None):
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
-        return PlanetEvent('Upcoming new moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def last_new_moon(self, jd=None):
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd, lookahead=-40)
-        return PlanetEvent('Preceding new moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_full_moon(self, jd=None):
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
-        return PlanetEvent('Upcoming full moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def last_full_moon(self, jd=None):
         jd = jd or self.jd
-        sun = Planet(sweph.SUN)
+        sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd, lookahead=-40)
-        return PlanetEvent('Preceding full moon in ' + self.sign(next_angle_jd), next_angle_jd)
+        return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_new_or_full_moon(self, jd=None):
         # TODO optimize
@@ -508,6 +512,15 @@ class Moon(Planet):
         else:
             return next_full_moon
 
+    def last_new_or_full_moon(self, jd=None):
+        # TODO optimize
+        last_new_moon = self.last_new_moon(jd)
+        last_full_moon = self.last_full_moon(jd)
+        if last_new_moon.jd > last_full_moon.jd:
+            return last_new_moon
+        else:
+            return last_full_moon
+
     def is_void_of_course(self, jd=None):
         """Whether the moon is void of course at a certain point in time.
         Returns a tuple (boolean, float) indicating whether it is void
@@ -516,6 +529,8 @@ class Moon(Planet):
         # and http://www.estelledaniels.com/articles/VoidMoon.html
         # the traditional planets plus the major new ones (uranus, neptune, pluto) are used
         # plus the traditional aspects of conjunction, sextile, square, trine, opposition
+        # another link:
+        # http://www.lunarliving.org/moon/void-of-course-moon.html
         raise NotImplementedError
         jd = jd or self.jd
         return (False, jd) # TODO
@@ -719,7 +734,9 @@ def main():
 
 # some more ideas:
 # * monthly calendar (as widget and for printing)
-# * upcoming event stream: https://play.google.com/store/apps/details?id=uk.co.lunarium.iluna
+# * upcoming event stream:
+#    https://play.google.com/store/apps/details?id=uk.co.lunarium.iluna
+#    http://www.lunarliving.org/
 
 # http://starchild.gsfc.nasa.gov/docs/StarChild/questions/question5.html
 

@@ -6,8 +6,11 @@ from nose.tools import assert_equal, assert_almost_equal, raises
 import unittest
 
 # misc
-def test_age():
+def test_moon_age():
     assert_almost_equal(Moon(2456794.949305556).age(), 18.189345157705247)
+
+def test_speed():
+    assert_almost_equal(Moon(iso2jd('1983-07-01 7:40:00Z')).speed(), 11.989598)
 
 def test_period_length():
     assert_almost_equal(Moon(2456794.949305556).period_length(), 29.517968974076211)
@@ -29,7 +32,7 @@ def test_rise_set():
 
 def test_iso_jd():
     time_iso = jd2iso(cerridwen.jd_now())
-    assert_equal(cerridwen.jd2iso(cerridwen.iso2jd(time_iso)), time_iso)
+    assert_equal(jd2iso(iso2jd(time_iso)), time_iso)
 
 def test_parse_date_valid_jd():
     parse_jd_or_iso_date(1)
@@ -39,6 +42,11 @@ def test_parse_date_valid_iso():
     parse_jd_or_iso_date("2014-05-20T23:37:17")
     parse_jd_or_iso_date("2014-05-20 23:37:17")
 
+
+def test_angle_finder():
+    # TODO need more of those
+    jd_new_moon_virgo_2014 = Moon(2456868).next_angle_to_planet(Sun(), 0)[0]
+    assert_equal(jd2iso(jd_new_moon_virgo_2014), '2014-08-25 14:12:46')
 @raises(ValueError)
 def test_parse_date_invalid_1():
     parse_jd_or_iso_date("2014-05-20T23:37:17X")
