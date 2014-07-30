@@ -461,6 +461,14 @@ class Planet:
         jd = jd or self.jd
         return self.next_sign_change(jd) - jd
 
+    def next_event(self, evtypes='all'):
+        # evtypes: all, rise, set, new, full,
+        # traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
+        # semi-sextile and more
+        # to planets: traditional_planets = sun, moon, mercury, venus, mars, jupiter, saturn
+        # extra: chiron, neptune, uranus, pluto, ceres, pallas
+        raise NotImplementedError
+
 class Sun(Planet):
     def __init__(self, jd=None, observer=None):
         jd = jd or jd_now()
@@ -970,15 +978,52 @@ def compute_moon_data(jd=None, observer=None):
     return result
 
 def generate_moon_tables():
+    # sketch: for each event type walk through the events
+    # with a reasonable look ahead, and add them to the database.
     import sqlite3
-    conn = sqlite3.connect('moon-events.db')
+    
+    conn = sqlite3.connect('events.db')
 
-    moon = Moon()
+    c = conn.cursor()
+
+    c.execute('CREATE TABLE IF NOT EXISTS events (jd float, desc text)')
+
+    c.execute('DELETE FROM events')
+
+    jd_start = 2415032.5 # 1 Jan 1900
+    future_jd = jd_now() + 365*100
+    flush_counter = 0
+
+    jd = jd_start
+    while jd < future_jd:
+        event = Moon(jd).next_event()
+
+        assert(event.jd >= jd)
+
+        percentage = (jd - jd_start) / (future_jd - jd_start) * 100
+        print('%f%%' % percentage, event.jd, event.description)
+
+        c.execute("INSERT INTO events VALUES (%f, '%s')" % (event.jd, event.description))
+
+        jd = event.jd + 10
+
+        flush_counter += 1
+        if flush_counter % 100 == 0:
+            conn.commit()
+
+    conn.commit()
+
+    conn.close()
+
     # idea sketch: start with previous new moon
     # then go further back, finding all new
     # moons up to a certain date in the past.
     # repeat for the future
     # repeat all this for full moon
+
+def print_moon_events():
+    import sqlite3
+    conn = sqlite3.connect('moon-events.db')
 
 def quicktest():
     return # re-enable later when we have a quick sanity test suite.
@@ -1046,6 +1091,24 @@ def main():
 # lunar standstills
 # moon out of sun's declination band
 
+def compute_min_max_speeds():
+    for p in [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
+        min = 1000
+        max = 0
+        jd = jd_now()
+        while jd < jd_now()+365*100:
+            if p.speed(jd) > max:
+                max = p.speed(jd)
+            if p.speed(jd) < min:
+                min = p.speed(jd)
+            jd += 1
+        print(p, min, max)
 
 if __name__ == '__main__':
-    main()
+    np.set_printoptions(threshold=1000)
+    #main()
+    #generate_moon_tables()
+    print(jd_now())
+    print(Jupiter().next_angle_to_planet(Saturn(), 0)[0])
+    print(Saturn().next_angle_to_planet(Jupiter(), 0)[0])
+
