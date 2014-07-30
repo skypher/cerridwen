@@ -6,7 +6,7 @@
 
 debug_angle_finder = 0
 
-maximum_angle_distance = 1e-6 # our guaranteed maximum error
+maximum_angle_distance = 2e-6 # our guaranteed maximum error
 
 import swisseph as sweph
 import time, calendar, astropy.time
