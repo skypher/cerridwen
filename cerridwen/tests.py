@@ -1,8 +1,9 @@
 import cerridwen.api_server
 
-from cerridwen import Moon, Sun, LatLong, jd2iso, iso2jd, parse_jd_or_iso_date
+from cerridwen import Moon, Sun, Mercury, Venus, Mars, Jupiter, Saturn
+from cerridwen import LatLong, jd2iso, iso2jd, parse_jd_or_iso_date
 
-from nose.tools import assert_equal, assert_almost_equal, raises
+from nose.tools import assert_equal, assert_almost_equal, raises, assert_sequence_equal
 import unittest
 
 # misc
@@ -51,6 +52,22 @@ def test_angle_finder():
     # TODO need more of those
     jd_new_moon_virgo_2014 = Moon(2456868).next_angle_to_planet(Sun(), 0)[0]
     assert_equal(jd2iso(jd_new_moon_virgo_2014), '2014-08-25 14:12:46')
+
+def test_angle_finder_2():
+    jd1 = Sun(2456868).next_angle_to_planet(Moon(), 0)[0]
+    jd2 = Moon(2456868).next_angle_to_planet(Sun(), 0)[0]
+    assert_equal(jd2iso(jd1), jd2iso(jd2))
+
+def test_angle_finder_3():
+    jd1 = Jupiter(2456868).next_angle_to_planet(Saturn(), 0)[0]
+    jd2 = Saturn(2456868).next_angle_to_planet(Jupiter(), 0)[0]
+    assert_equal(jd2iso(jd1), jd2iso(jd2))
+    assert_equal(jd2iso(jd1), "2020-12-21 18:20:29")
+
+#@raises(ValueError)
+#def test_angle_finder_reverse_planet_args():
+#    Sun().next_angle_to_planet(Moon(), 0, lookahead=1)
+
 @raises(ValueError)
 def test_parse_date_invalid_1():
     parse_jd_or_iso_date("2014-05-20T23:37:17X")
