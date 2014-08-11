@@ -7,6 +7,7 @@
 debug_angle_finder = 0
 
 maximum_angle_distance = 2e-6 # our guaranteed maximum error
+max_data_points = 100000
 
 import swisseph as sweph
 import time, calendar, astropy.time
@@ -44,15 +45,15 @@ def parse_jd_or_iso_date(date):
                      '(e.g. "2456799.9897") or as an ISO8601 string denoting a UTC ' +
                      'time in this format: 2014-05-20 23:37:17.')
 
-def mod360_fabs(a, b):
-    """fabs for a,b in mod(360)"""
+def mod360_distance(a, b):
+    """distance between a and b in mod(360)"""
     # Surprisingly enough there doesn't seem to be a more elegant way.
     # Check http://stackoverflow.com/questions/6192825/
     a %= 360
     b %= 360
 
     if a < b:
-        return mod360_fabs(b, a)
+        return mod360_distance(b, a)
     else:
         return min(a-b, b-a+360)
 
@@ -264,7 +265,7 @@ class Planet:
         # TODO also return an indicator of whether it is growing or shrinking.
         jd = jd or self.jd
         sun = Sun()
-        return (180 - mod360_fabs(self.angle(sun, jd), 180)) / 180
+        return (180 - mod360_distance(self.angle(sun, jd), 180)) / 180
 
     def next_rise(self):
         if self.observer is None:
@@ -329,7 +330,7 @@ class Planet:
         next_angle_jd = next_angles[0]['jd']
 
         delta_jd = next_angle_jd - jd
-        angle_diff = mod360_fabs(target_angle, next_angles[0]['angle'])
+        angle_diff = mod360_distance(target_angle, next_angles[0]['angle'])
 
         assert angle_diff <= maximum_angle_distance, (target_angle, next_angles[0]['angle'], angle_diff)
 
@@ -346,8 +347,27 @@ class Planet:
             passes = 8
         if sample_interval == "auto":
             sample_interval = self.default_sample_interval()
+
+        # XXX debug help
+        #passes = 0
+        #sample_interval = 1/10
+
+        num_data_points = abs(jd_end - jd_start) / sample_interval
+        #print('data points', num_data_points)
+        if num_data_points > max_data_points:
+            # this used to be a safeguard against bogus matches in
+            # certain Rx periods. It still makes sense to leave this
+            # in for a while.
+            #sample_interval = 1/1000
+            #if debug_angle_finder:
+            #    print('data point maximum (%d) exceeded (have %d), reducing sample interval to %f.' %
+            #            (max_data_points, num_data_points, sample_interval))
+            if debug_angle_finder:
+                print('data point maximum (%d) exceeded (have %d), aborting pass.' %
+                        (max_data_points, num_data_points))
+            return None
         if orb == "auto":
-            orb = 2
+            orb = maximum_angle_distance * 10 # "exact"
         assert(orb>=0)
         if debug_angle_finder:
             print('atpwp (:=%d deg): start=%f (%s), end=%f (%s), interval=%f, '
@@ -360,33 +380,52 @@ class Planet:
         angle_at_jd_v = np.vectorize(angle_at_jd)
         angles = angle_at_jd_v(jds)
         if debug_angle_finder:
-            print("The angles:",angles[0], angles[-1])
+            print("The angles: %f,%f,...,%f,%f (%d total):" %
+                    (angles[0], angles[1], angles[-2], angles[-1], num_data_points))
         target_adjusted_angles = (angles - target_angle) % 360
-        gradient_signs = np.sign(np.diff(target_adjusted_angles))
-        sign_changes = np.roll(np.diff(gradient_signs) != 0, 1)
-        matching_jds = jds[sign_changes]
 
-        if matching_jds.size < 2:
-            # no local minimum at all
+        distances = np.vectorize(mod360_distance)(180, target_adjusted_angles)
+        distances -= 180
+        distances *= -1
+
+        distances_gradient = np.diff(distances)
+        is_extremum = np.roll(np.diff(np.sign(distances_gradient)), 1) != 0
+        curves_left = np.roll(np.diff(distances_gradient), 1) > 0
+        is_minimum = np.logical_and(is_extremum, curves_left)
+
+        if debug_angle_finder:
+            for i in range(0, len(curves_left)):
+                if is_minimum[i]:
+                    print('found local minimum:',
+                            jds[i], distances[i],
+                            distances_gradient[i],
+                            is_extremum[i],
+                            curves_left[i],
+                            is_minimum[i]
+                            )
+
+        # TODO I think we can do away with the legacy notion
+        # of starts and ends
+        jd_starts = jds[is_minimum] - sample_interval * 2
+        jd_ends = jds[is_minimum] + sample_interval * 2
+
+        assert(jd_starts.size == jd_ends.size)
+
+        if debug_angle_finder:
+            print(jds[is_minimum], jd_starts, jd_ends)
+
+        if jd_starts.size == 0:
+            if debug_angle_finder:
+                print('no local minimum found')
             return None
 
         matches = []
-        jd_starts = matching_jds[::2]
-        jd_ends = matching_jds[1::2]
-        # sometimes we have an odd number of sign changes;
-        # in that case just ignore the last one.
-        start_end_pairs = min(jd_starts.size, jd_ends.size)
-        for i in range(start_end_pairs):
+
+        for i in range(jd_starts.size):
             jd_start = jd_starts[i]
             jd_end = jd_ends[i]
             angle_start = angle_at_jd(jd_start)
             angle_end = angle_at_jd(jd_end)
-            # the following filter is necessary when Rx motion is involved.
-            # a sufficiently small orb ensures that we can identify the
-            # interesting local minima and forget about the other ones.
-            if (mod360_fabs(angle_start, target_angle) > orb and
-                mod360_fabs(angle_end, target_angle) > orb):
-                   continue
             match = {'jd_start':jd_start, 'jd_end':jd_end,
                      'angle_start': angle_start,
                      'angle_end': angle_end}
@@ -403,8 +442,12 @@ class Planet:
             return {'jd': jd_mean, 'angle': angle_at_jd(jd_mean)}
 
         refined_matches = []
-        if passes:
-            for match in matches:
+        for match in matches:
+            angular_distance = mod360_distance(angle_at_jd(match['jd_start']), angle_at_jd(match['jd_end']))
+            precision_reached = (angular_distance < maximum_angle_distance)
+            if precision_reached and debug_angle_finder:
+                print('STOP: precision reached (distance %f)' % angular_distance)
+            if passes and not precision_reached:
                 new_sample_interval = sample_interval * (1/100)
                 result = self.angles_to_planet_within_period(planet,
                         target_angle,
@@ -418,9 +461,20 @@ class Planet:
                     if debug_angle_finder:
                         print('Notice: stopping angle finder with %d passes '
                               'remaining.' % (passes-1))
+                    dist = mod360_distance(match_mean(match)['angle'], target_angle)
+                    if dist > orb:
+                        if debug_angle_finder:
+                            print('Notice: discarding match (%f is outside orb %f):' %
+                                    (dist, orb), match)
+                        continue
                     refined_matches.append(match_mean(match))
-        else:
-            for match in matches:
+            else:
+                dist = mod360_distance(match_mean(match)['angle'], target_angle)
+                if dist > orb:
+                    if debug_angle_finder:
+                        print('Notice: discarding match (%f is outside orb %f):' %
+                                (dist, orb), match)
+                    continue
                 refined_matches.append(match_mean(match))
 
         return refined_matches
@@ -451,7 +505,7 @@ class Planet:
         jd = jd or self.jd
         next_sign_idx = (signs.index(self.sign(jd)) + 1) % 12
         planet = FixedZodiacPoint(next_sign_idx * 30)
-        result_jd = self.next_angle_to_planet(planet, 0, jd, lookahead=self.sign_change_lookahead(), sample_interval=1/20)
+        result_jd = self.next_angle_to_planet(planet, 0, jd, lookahead=self.sign_change_lookahead())
         assert(result_jd is not None)
         # we nudge the result a bit to the right to make sure it's in the
         # new sign. otherwise functions like time_left_in_sign get confused.
