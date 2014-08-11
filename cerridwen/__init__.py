@@ -420,6 +420,29 @@ class Planet:
                 print('no local minimum found')
             return None
 
+        #for i in range(0, len(gradient_signs)):
+        #    print(jds[i], jd2iso(jds[i]), target_adjusted_angles[i], gradient_signs[i])
+
+        #import matplotlib.pyplot as plt
+        #print(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes))
+        #min_elems = min(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes), len(distances_g2),
+        #        len(distances_gradient_signs_gradient))
+        #filename = "%s-%s-pass%d.png" % (self, planet, passes)
+        #plt.plot(jds[:-3], distances[:-3], jds[:-3], distances_gradient[:-2], jds[:-3], distances_g2[:-1])
+        #plt.plot(jds[:-3], distances_g2[:-1])
+        #plt.plot(jds[:min_elems], distances[:min_elems],
+        #         jds[:min_elems], distances_gradient_signs_gradient[:min_elems],
+        #         jds[:min_elems], distances_g2[:min_elems])
+        #for i in range(0, len(distances_g2)):
+        #    if distances_gradient_signs_gradient[i] != 0 and distances_g2[i] > 0:
+        #        print('found local minimum:',
+        #                jds[i], distances[i], distances_gradient[i],
+        #                distances_gradient_signs_gradient[i],
+        #                distances_g2[i])
+        #plt.ylim(-0.5,.5)
+        #plt.savefig(filename)
+
+
         matches = []
 
         for i in range(jd_starts.size):
