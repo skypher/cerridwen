@@ -11,7 +11,7 @@ def test_moon_age():
     assert_almost_equal(Moon(2456794.949305556).age(), 18.189345157705247)
 
 def test_speed():
-    assert_almost_equal(Moon(iso2jd('1983-07-01 7:40:00Z')).speed(), 11.989598)
+    assert_almost_equal(Moon(iso2jd('1983-07-01 7:40:00Z')).speed(), 11.989598784682862)
 
 def test_period_length():
     assert_almost_equal(Moon(2456794.949305556).period_length(), 29.517968974076211)

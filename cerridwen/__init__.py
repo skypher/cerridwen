@@ -319,7 +319,8 @@ class Planet:
                                                           jd_start, jd_end,
                                                           sample_interval=sample_interval,
                                                           passes=passes,
-                                                          orb=orb)
+                                                          orb=orb,
+                                                          first_match_only=True)
 
         if next_angles is None:
             return None
@@ -338,7 +339,7 @@ class Planet:
 
     def angles_to_planet_within_period(self, planet, target_angle, jd_start,
                                        jd_end, sample_interval="auto",
-                                       passes="auto", orb="auto"):
+                                       passes="auto", orb="auto", first_match_only=False):
         # TODO let user specify precision and whether only the first match is
         # interesting. then limit the number of passes accordingly.
         # TODO: set orb according to the planets involved, if "auto".
@@ -1031,9 +1032,7 @@ def compute_moon_data(jd=None, observer=None):
 
     return result
 
-def generate_moon_tables():
-    # sketch: for each event type walk through the events
-    # with a reasonable look ahead, and add them to the database.
+def generate_event_table(jd_start):
     import sqlite3
     
     conn = sqlite3.connect('events.db')
@@ -1044,13 +1043,44 @@ def generate_moon_tables():
 
     c.execute('DELETE FROM events')
 
-    jd_start = 2415032.5 # 1 Jan 1900
-    future_jd = jd_now() + 365*100
-    flush_counter = 0
+    future_jd = jd_now() + 365*30
 
+    def pump_events(event_function):
+        flush_counter = 0
+        jd = jd_start
+        while jd < future_jd:
+            event_jd, event_description = event_function(jd)
+
+            assert(event_jd >= jd)
+
+            percentage = (jd - jd_start) / (future_jd - jd_start) * 100
+            print('%f%%' % percentage, event_jd, jd2iso(event_jd), event_description)
+
+            c.execute("INSERT INTO events VALUES (%f, '%s')" % (event_jd, event_description))
+
+            # 1 day is reasonable for the smallest event we handle (Moon ingress)
+            jd = event_jd + 1
+
+            flush_counter += 1
+            if flush_counter % 100 == 0:
+                conn.commit()
+
+    # ingresses
+    for planet in [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
+        def event_function(jd):
+            event_jd = planet.next_sign_change(jd)
+            event_description = '%s enters %s' % (planet.name(), planet.sign(event_jd))
+            return (event_jd, event_description)
+            
+        pump_events(event_function)
+
+    return
+
+    # new/full moons
+    flush_counter = 0
     jd = jd_start
     while jd < future_jd:
-        event = Moon(jd).next_event()
+        event = Moon(jd).next_new_or_full_moon()
 
         assert(event.jd >= jd)
 
@@ -1160,9 +1190,20 @@ def compute_min_max_speeds():
 
 if __name__ == '__main__':
     np.set_printoptions(threshold=1000)
-    #main()
-    #generate_moon_tables()
-    print(jd_now())
-    print(Jupiter().next_angle_to_planet(Saturn(), 0)[0])
-    print(Saturn().next_angle_to_planet(Jupiter(), 0)[0])
 
+    print(jd_now())
+
+    # bug at 2445548.93216 mercury sign change (enters Libra)
+    #print(Mercury(2445548.93216).next_sign_change())
+
+    # bug at 2447728 mercury sign change (enters Virgo)
+    #print(Mercury(2447727.9).next_sign_change())
+
+    generate_event_table(iso2jd('1983-07-01 7:40:00Z'))
+
+    #print('---')
+    #print(Moon().next_new_or_full_moon())
+
+    #generate_event_table(2447700)
+
+# TODO: move Planet stuff to separate file planets.py
