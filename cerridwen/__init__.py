@@ -113,7 +113,7 @@ class PlanetEvent():
 
     @property
     def delta_days(self, rel_jd=None):
-        rel_jd = rel_jd or jd_now()
+        if rel_jd is None: rel_jd = jd_now()
         return self.jd - rel_jd
 
     def _asdict(self):
@@ -168,7 +168,7 @@ class PlanetLongitude():
 
 class Ascendant:
     def __init__(self, long, lat, jd=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         self.jd = jd
         self.long = long
         self.lat = lat
@@ -221,7 +221,7 @@ class FixedZodiacPoint:
 
 class Planet:
     def __init__(self, planet_id, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         self.id = planet_id
         self.jd = jd
         self.observer = observer
@@ -593,7 +593,7 @@ class Planet:
 
 class Sun(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Sun, self).__init__(sweph.SUN, jd, observer)
 
     def max_speed(self):
@@ -629,7 +629,7 @@ class Sun(Planet):
 
 class Moon(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Moon, self).__init__(sweph.MOON, jd, observer)
 
     def sign_change_lookahead(self):
@@ -780,7 +780,7 @@ class Moon(Planet):
 
 class Mercury(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Mercury, self).__init__(sweph.MERCURY, jd, observer)
 
     def max_speed(self):
@@ -823,7 +823,7 @@ class Mercury(Planet):
 
 class Venus(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Venus, self).__init__(sweph.VENUS, jd, observer)
 
     def max_speed(self):
@@ -867,7 +867,7 @@ class Venus(Planet):
 
 class Mars(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Mars, self).__init__(sweph.MARS, jd, observer)
 
     def max_speed(self):
@@ -908,7 +908,7 @@ class Mars(Planet):
 
 class Jupiter(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Jupiter, self).__init__(sweph.JUPITER, jd, observer)
 
     def max_speed(self):
@@ -945,7 +945,7 @@ class Jupiter(Planet):
 
 class Saturn(Planet):
     def __init__(self, jd=None, observer=None):
-        jd = jd or jd_now()
+        if jd is None: jd = jd_now()
         super(Saturn, self).__init__(sweph.SATURN, jd, observer)
 
     def max_speed(self):
@@ -1044,7 +1044,7 @@ def compute_sun_data(jd=None, observer=None):
      :returns: a collection of sun data
      :rtype: OrderedDict
      """
-    jd = jd or jd_now()
+    if jd is None: jd = jd_now()
 
     result = collections.OrderedDict()
 
@@ -1077,7 +1077,7 @@ def compute_moon_data(jd=None, observer=None):
      :returns: a collection of sun data
      :rtype: OrderedDict
      """
-    jd = jd or jd_now()
+    if jd is None: jd = jd_now()
 
     result = collections.OrderedDict()
 

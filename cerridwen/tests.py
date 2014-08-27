@@ -75,6 +75,10 @@ def test_sign_change_2():
 def test_mercury_semisextile_sun_impossible():
     assert_equal(Mercury(2460932).next_angle_to_planet(Sun(2460932), 30), None)
 
+def test_zero_jd():
+    assert_almost_equal(Mercury(0).position().absolute_degrees, 222.3977788981)
+
+
 @raises(ValueError)
 def test_parse_date_invalid_1():
     parse_jd_or_iso_date("2014-05-20T23:37:17X")
@@ -95,14 +99,16 @@ class HTTP_TestCase(unittest.TestCase):
         response = self.app.get('/v1/moon')
         self.assertEqual(response.status_code, 200)
 
+    def simple_events_test(self):
+        response = self.app.get('/v1/events')
+        self.assertEqual(response.status_code, 200)
+
     def jd_date_test(self):
         response = self.app.get('/v1/sun?date=2456805.9347222224')
-        print(response)
         self.assertEqual(response.status_code, 200)
 
     def bogus_date_test(self):
         response = self.app.get('/v1/sun?date=jumble81923')
-        print(response)
         self.assertEqual(response.status_code, 400)
 
     def root_404(self):
