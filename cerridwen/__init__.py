@@ -146,15 +146,15 @@ class Ascendant:
         return '%s at %s' % (self.name(), jd2iso(self.jd))
 
     def longitude(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return sweph.houses(jd, self.lat, self.long)[1][0]
 
     def position(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return PlanetLongitude(self.longitude(jd))
 
     def sign(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return self.position(jd).sign
 
 class FixedZodiacPoint:
@@ -197,48 +197,48 @@ class Planet:
 
     def diameter(self, jd=None):
         """The apparent diameter of the planet, in arc minutes."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return sweph.pheno_ut(jd, self.id)[3] * 60
 
     def longitude(self, jd=None):
         "Ecliptical longitude of planet"
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         long = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0]
         return long
 
     def latitude(self, jd=None):
         "Ecliptical latitude of planet"
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         lat = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[1]
         return lat
 
     def rectascension(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
         ra = sweph.calc_ut(jd, self.id, flags)[0]
         return ra
 
     def declination(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
         dec = sweph.calc_ut(jd, self.id, flags)[1]
         return dec
 
     def distance(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         distance = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[2]
         return distance
 
     def position(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return PlanetLongitude(self.longitude(jd))
 
     def sign(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return self.position(jd).sign
 
     def speed(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         speed = sweph.calc_ut(jd, self.id)[3]
         return speed
 
@@ -246,24 +246,24 @@ class Planet:
         raise NotImplementedError
 
     def is_rx(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         speed = self.speed(jd)
         return speed < 0
 
     def is_stationing(self, jd=None):
         # http://houseofdaedalus.blogspot.de/2012/07/meaning-of-retrograde-motion.html
         # TODO: the link talks about Mercury, what about other planets?
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         speed = self.speed()
         return math.fabs(speed) < 0.2
 
     def angle(self, planet, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return (self.longitude(jd) - planet.longitude(jd)) % 360
 
     def illumination(self, jd=None):
         # TODO also return an indicator of whether it is growing or shrinking.
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         return (180 - mod360_distance(self.angle(sun, jd), 180)) / 180
 
@@ -294,7 +294,7 @@ class Planet:
     def next_angle_to_planet(self, planet, target_angle, jd=None,
                              orb="auto", lookahead="auto", sample_interval="auto",
                              passes="auto"):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         """Return (jd, delta_jd) indicating the time of the next target_angle
         to a planet.
         Return None if no result could be found in the requested lookahead
@@ -526,7 +526,7 @@ class Planet:
         raise NotImplementedError
 
     def next_sign_change(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         next_sign_idx = (signs.index(self.sign(jd)) + 1) % 12
         planet = FixedZodiacPoint(next_sign_idx * 30)
         result_jd = self.next_angle_to_planet(planet, 0, jd, lookahead=self.sign_change_lookahead())
@@ -536,7 +536,7 @@ class Planet:
         return result_jd[0] + maximum_angle_distance
 
     def time_left_in_sign(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return self.next_sign_change(jd) - jd
 
     def next_event(self, evtypes='all'):
@@ -557,7 +557,7 @@ class Sun(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Leo':
             return 'rulership'
@@ -606,17 +606,17 @@ class Moon(Planet):
 
     def speed_ratio(self, jd=None):
         # 11.76/d to 15.33deg/d
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return (self.speed(jd) - 11.76) / 3.57
 
     def diameter_ratio(self, jd=None):
         # 29.3' to 34.1'
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return (self.diameter(jd) - 29.3) / 4.8
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Cancer':
             return 'rulership'
@@ -630,15 +630,15 @@ class Moon(Planet):
             return None
 
     def age(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return jd - self.last_new_moon().jd
 
     def period_length(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return self.next_new_moon().jd - self.last_new_moon().jd
 
     def phase(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         angle = self.angle(sun, jd)
 
@@ -673,25 +673,25 @@ class Moon(Planet):
         return MoonPhaseData._make([trend, shape, quarter, quarter_english])
 
     def next_new_moon(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd)
         return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def last_new_moon(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 0, jd, lookahead=-40)
         return PlanetEvent('New moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def next_full_moon(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd)
         return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
 
     def last_full_moon(self, jd=None):
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sun = Sun()
         next_angle_jd, delta_jd, angle_diff = self.next_angle_to_planet(sun, 180, jd, lookahead=-40)
         return PlanetEvent('Full moon in ' + self.sign(next_angle_jd), next_angle_jd)
@@ -725,13 +725,13 @@ class Moon(Planet):
         # another link:
         # http://www.lunarliving.org/moon/void-of-course-moon.html
         raise NotImplementedError
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return (False, jd) # TODO
 
     def lunation_number(self):
         # TODO http://en.wikipedia.org/wiki/Lunation_Number
         raise NotImplementedError
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         return 0
 
 class Mercury(Planet):
@@ -751,7 +751,7 @@ class Mercury(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Gemini':
             return 'rulership'
@@ -780,7 +780,7 @@ class Venus(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Libra':
             return 'rulership'
@@ -817,7 +817,7 @@ class Mars(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Aries':
             return 'rulership'
@@ -858,7 +858,7 @@ class Jupiter(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Sagittarius':
             return 'rulership'
@@ -895,7 +895,7 @@ class Saturn(Planet):
 
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
-        jd = jd or self.jd
+        if jd is None: jd = self.jd
         sign = self.sign(jd)
         if sign == 'Capricorn':
             return 'rulership'
