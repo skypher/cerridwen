@@ -1113,31 +1113,75 @@ def compute_moon_data(jd=None, observer=None):
 
     return result
 
-def generate_event_table(jd_start):
+def get_events(jd_start, jd_end, limit=100, type='%', subtype='%', planet='%', data='%'):
+    # TODO we only support AND of filters, not OR
     import sqlite3
-    
-    conn = sqlite3.connect('events.db')
+
+    conn = sqlite3.connect(dbfile)
+
+    conn.row_factory = sqlite3.Row
 
     c = conn.cursor()
 
-    c.execute('CREATE TABLE IF NOT EXISTS events (jd float, desc text)')
+    sql = """SELECT * FROM events
+             WHERE jd BETWEEN ? AND ?
+               AND type LIKE ? AND subtype LIKE ?
+               AND planet LIKE ? AND data LIKE ?
+             ORDER BY jd ASC
+             LIMIT ?"""
+    rows = c.execute(sql, (jd_start, jd_end, type, subtype, planet, data, limit))
 
+    result = []
+    for row in rows:
+        dict = collections.OrderedDict()
+        for key in ['jd', 'type', 'subtype', 'planet', 'data']:
+                dict[key] = row[key]
+        dict['iso_date'] = jd2iso(row['jd'])
+        dict['delta_days'] = row['jd'] - jd_start
+        result.append(dict)
+
+    return result
+
+
+def generate_event_table(jd_start, jd_end):
+    # TODO this generates events that slightly exceed jd_end
+    import sqlite3
+    
+    conn = sqlite3.connect(dbfile)
+
+    c = conn.cursor()
+
+    c.execute('DROP TABLE events')
+    c.execute('CREATE TABLE IF NOT EXISTS events (jd float, type text, subtype text, planet text, data text)')
     c.execute('DELETE FROM events')
-
-    future_jd = jd_now() + 365*30
 
     def pump_events(event_function):
         flush_counter = 0
         jd = jd_start
-        while jd < future_jd:
-            event_jd, event_description = event_function(jd)
+        while jd < jd_end:
+            event = event_function(jd)
+            if event is None:
+                # see comment on "Mercury sextile Venus' below.
+                jd += 365 * 2.4
+                continue
 
+            event_jd, event_type, event_subtype, event_planet, event_data = event_function(jd)
             assert(event_jd >= jd)
+            assert(event_type)
+            assert(event_planet)
 
-            percentage = (jd - jd_start) / (future_jd - jd_start) * 100
-            print('%f%%' % percentage, event_jd, jd2iso(event_jd), event_description)
+            if event_subtype is None:
+                event_subtype = ''
+            if event_data is None:
+                event_data = ''
 
-            c.execute("INSERT INTO events VALUES (%f, '%s')" % (event_jd, event_description))
+
+            percentage = (jd - jd_start) / (jd_end - jd_start) * 100
+            print('%f%%' % percentage, event_jd, jd2iso(event_jd), event_type,
+                    event_subtype, event_planet, event_data)
+
+            c.execute("INSERT INTO events VALUES (?, ?, ?, ?, ?)", 
+                    (event_jd, event_type, event_subtype, event_planet, event_data))
 
             # 1 day is reasonable for the smallest event we handle (Moon ingress)
             jd = event_jd + 1
@@ -1146,45 +1190,66 @@ def generate_event_table(jd_start):
             if flush_counter % 100 == 0:
                 conn.commit()
 
+    # types: "square dexter" ... conjunction ... ingress retrograde direct
+    # type / p1 / p2 or sign or NULL
+    # frontend: "Mercury Rx in Pisces square dexter Saturn in Sagittarius"
+    # db: "Mercury square dexter Saturn"
+
+    # TODO retrograde/direct events, more planets
+
+    # aspects
+    planets = [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]
+    #aspects = [(72, 'quintile', 'dexter'), (288, 'quintile', 'sinister')]
+    #planets = [Venus(), Mars()]
+    #aspects = [(30, 'sextile', 'dexter')]
+    for planet in planets:
+        for partner_planet in planets:
+            if partner_planet.max_speed() < planet.max_speed():
+                for aspect in aspects:
+                    aspect_angle, aspect_name, aspect_mode = aspect
+                    if planet.aspect_possible(partner_planet, aspect_angle):
+                        event_type = aspect_name
+                        event_subtype = aspect_mode
+                        def event_function(jd):
+                            next_angle = planet.next_angle_to_planet(partner_planet, aspect_angle, jd)
+                            if next_angle:
+                                event_jd, delta_days, angle_diff = next_angle
+                                return (event_jd, event_type, event_subtype, planet.name(), partner_planet.name())
+                            # Mercury sextile Venus is possible but might not happen in the standard lookahead
+                            # period. Mercury quintile Venus is even unlikelier. In both cases we want to skip
+                            # the current lookahead period and look in the next.
+                            assert(planet.name() in ['Mercury', 'Venus'] and
+                                   partner_planet.name() in ['Mercury', 'Venus'] and
+                                   aspect_angle >= 60)
+                            print('Note: no %s (%s) aspect between %s and %s in period starting %f.' %
+                                    (aspect_name, aspect_mode, planet.name(), partner_planet.name(), jd))
+                            return None
+                        pump_events(event_function)
+
     # ingresses
-    for planet in [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
+    for planet in planets:
         def event_function(jd):
             event_jd = planet.next_sign_change(jd)
-            event_description = '%s enters %s' % (planet.name(), planet.sign(event_jd))
-            return (event_jd, event_description)
-            
+            event_type = 'ingress'
+            event_subtype = None
+            event_planet = planet.name()
+            event_data = planet.sign(event_jd)
+            return (event_jd, event_type, event_subtype, event_planet, event_data)
         pump_events(event_function)
 
-    return
-
-    # new/full moons
-    flush_counter = 0
-    jd = jd_start
-    while jd < future_jd:
-        event = Moon(jd).next_new_or_full_moon()
-
-        assert(event.jd >= jd)
-
-        percentage = (jd - jd_start) / (future_jd - jd_start) * 100
-        print('%f%%' % percentage, event.jd, event.description)
-
-        c.execute("INSERT INTO events VALUES (%f, '%s')" % (event.jd, event.description))
-
-        jd = event.jd + 10
-
-        flush_counter += 1
-        if flush_counter % 100 == 0:
-            conn.commit()
+    # retrogrades
+    # TODO
+    #for planet in [Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
+    #    def event_function(jd):
+    #        event_jd = planet.next_rx_period(jd)
+    #        event_description = '%s turns retrograde' % (planet.name(), planet.sign(event_jd))
+    #        return (event_jd, event_description)
+    #        
+    #    pump_events(event_function)
 
     conn.commit()
 
     conn.close()
-
-    # idea sketch: start with previous new moon
-    # then go further back, finding all new
-    # moons up to a certain date in the past.
-    # repeat for the future
-    # repeat all this for full moon
 
 def print_moon_events():
     import sqlite3
@@ -1276,9 +1341,13 @@ if __name__ == '__main__':
 
     # bug at 2445548.93216 mercury sign change (enters Libra)
     #print(Mercury(2445548.93216).next_sign_change())
+    jd_start = iso2jd('2014-07-01 7:40:00Z')
+    jd_end = jd_start + 365*1
+    #generate_event_table(jd_start, jd_end)
 
     # bug at 2447728 mercury sign change (enters Virgo)
     #print(Mercury(2447727.9).next_sign_change())
+    #for event in get_events(jd_now(), jd_now()+400, planet='mercury', type='ingress'): print(event, '\n')
 
     generate_event_table(iso2jd('1983-07-01 7:40:00Z'))
 
