@@ -23,13 +23,18 @@ sweph_dir = os.path.join(_ROOT, '../sweph')
 
 sweph.set_ephe_path(sweph_dir)
 
+
+signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
+         'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'];
+
+                   
+traditional_major_aspects = ['conjunction', 'sextile', 'square', 'trine', 'opposition']
 def jd_now():
     return astropy.time.Time.now().jd
 
 def iso2jd(iso):
     return astropy.time.Time(iso, scale='utc').jd
                         
-# TODO: strftime probably is not very reliable
 def jd2iso(jd):
     """Convert a Julian date into an ISO 8601 date string representation"""
     return astropy.time.Time(jd, format='jd', scale='utc', precision=0).iso
@@ -56,11 +61,6 @@ def mod360_distance(a, b):
         return mod360_distance(b, a)
     else:
         return min(a-b, b-a+360)
-
-signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
-         'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'];
-
-traditional_major_aspects = [0, 60, 90, 120, 180, 270, 300]
 
 MoonPhaseData = collections.namedtuple('MoonPhaseData', ['trend', 'shape', 'quarter', 'quarter_english'])
 
@@ -322,7 +322,7 @@ class Planet:
                                                           orb=orb,
                                                           first_match_only=True)
 
-        if next_angles is None:
+        if not next_angles:
             return None
 
         if lookahead < 0: # backwards search
@@ -343,7 +343,10 @@ class Planet:
         # TODO let user specify precision and whether only the first match is
         # interesting. then limit the number of passes accordingly.
         # TODO: set orb according to the planets involved, if "auto".
+        # TODO this function does not support angles between planets at different
+        # points in time. Consider this.
         assert(target_angle<360)
+
         if passes == "auto":
             passes = 8
         if sample_interval == "auto":
@@ -574,7 +577,7 @@ class Sun(Planet):
         return 35
 
     def aspect_lookahead(self):
-        return 365 * 2.5 # roughly max time to conjunction/opposition with Mars
+        return 365 * 3.5 # roughly max time to conjunction/opposition with Mars
 
     def average_motion_per_year(self):
         return 360
@@ -801,7 +804,8 @@ class Venus(Planet):
         return 150
 
     def aspect_lookahead(self):
-        return 365 * 2.5 # roughly max time to conjunction/opposition with Mars
+        return 365 * 3.5 # roughly max time to conjunction/opposition with Mars
+
 
     def average_motion_per_year(self):
         return 360
@@ -842,7 +846,7 @@ class Mars(Planet):
         return 30 * 10
 
     def aspect_lookahead(self):
-        return 365 * 2.5 # roughly max time to conjunction/opposition with Jupiter
+        return 365 * 3.5 # roughly max time to conjunction/opposition with Jupiter
 
     def average_motion_per_year(self):
         return 180

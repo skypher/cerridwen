@@ -64,9 +64,6 @@ def test_angle_finder_3():
     assert_equal(jd2iso(jd1), jd2iso(jd2))
     assert_equal(jd2iso(jd1), "2020-12-21 18:20:29")
 
-#@raises(ValueError)
-#def test_angle_finder_reverse_planet_args():
-#    Sun().next_angle_to_planet(Moon(), 0, lookahead=1)
 
 @raises(ValueError)
 def test_parse_date_invalid_1():
