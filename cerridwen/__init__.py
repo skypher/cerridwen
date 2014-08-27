@@ -20,6 +20,7 @@ import os
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 sweph_dir = os.path.join(_ROOT, '../sweph')
+dbfile = os.path.join(_ROOT, 'events.db')
 
 sweph.set_ephe_path(sweph_dir)
 
@@ -27,8 +28,41 @@ sweph.set_ephe_path(sweph_dir)
 signs = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
          'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'];
 
+# TODO there are quite a few minor aspects that aren't included yet.
+dexter_aspects = [
+        (30, 'semi-sextile'),
+        (45, 'semi-square'),
+        (60, 'sextile'),
+        (72, 'quintile'),
+        (120, 'trine'),
+        (144, 'bi-quintile'),
+        (150, 'quincunx')
+]
+
+sinister_aspects = reversed([(360 - x[0], x[1]) for x in dexter_aspects])
+
+aspects = (
+        [(0, 'conjunction', None)] +
+        [x + ('dexter',) for x in dexter_aspects] +
+        [(180, 'opposition', None)] +
+        [x + ('sinister',) for x in sinister_aspects]
+)
+
+def angle_to_aspect_name(angle):
+    return [aspect[1] for aspect in aspects if aspect[0] == angle]
+
+def aspect_name_to_angle(name):
+    "Get the (dexter, if applicable) angle for an aspect name"
+    if name == 'conjunction':
+        return 0
+    if name == 'opposition':
+        return 180
+    else:
+        return [aspect[0] for aspect in dexter_aspects if aspect[1] == name]
                    
 traditional_major_aspects = ['conjunction', 'sextile', 'square', 'trine', 'opposition']
+sign_related_aspects = ['conjunction', 'semi-sextile', 'sextile', 'square', 'trine', 'quincunx', 'opposition']
+
 def jd_now():
     return astropy.time.Time.now().jd
 
@@ -179,6 +213,9 @@ class FixedZodiacPoint:
     def max_speed(self):
         return 0
 
+    def aspect_possible(self, planet, angle):
+        return True # TODO only if we don't aspect another FixedZodiacPoint
+
     def aspect_lookahead(self):
         return 10**10 # "infinity"
 
@@ -290,6 +327,10 @@ class Planet:
             raise ValueError('Rise/set times require observer longitude and latitude')
         jd = sweph.rise_trans(self.jd-1, self.id, self.observer.long, self.observer.lat, rsmi=2)[1][0]
         return PlanetEvent('%s sets' % self.name(), jd)
+
+    def aspect_possible(self, planet, angle):
+        return True
+
 
     def next_angle_to_planet(self, planet, target_angle, jd=None,
                              orb="auto", lookahead="auto", sample_interval="auto",
@@ -752,6 +793,13 @@ class Mercury(Planet):
     def aspect_lookahead(self):
         return 365 * 2.5 
 
+    def aspect_possible(self, planet, angle):
+        if planet.name() == 'Sun':
+            return angle < 27.8 or angle > (360 - 27.8)
+        if planet.name() == 'Venus':
+            return angle < (27.8 + 47.8) or angle > (360 - (27.8 + 47.8))
+        return True
+
     def dignity(self, jd=None):
         """Return the dignity of the planet at jd, or None."""
         if jd is None: jd = self.jd
@@ -806,6 +854,12 @@ class Venus(Planet):
     def aspect_lookahead(self):
         return 365 * 3.5 # roughly max time to conjunction/opposition with Mars
 
+    def aspect_possible(self, planet, angle):
+        if planet.name() == 'Sun':
+            return angle < 47.8 or angle > (360 - 47.8)
+        if planet.name() == 'Mercury':
+            return angle < (27.8 + 47.8) or angle > (360 - (27.8 + 47.8))
+        return True
 
     def average_motion_per_year(self):
         return 360
