@@ -44,12 +44,15 @@ class MWT(object):
         return func
 
 def emit_json(result):
-    for fieldname in result:
-        if isinstance(result[fieldname],
-                (cerridwen.PlanetEvent,
-                 cerridwen.PlanetLongitude,
-                 cerridwen.MoonPhaseData)):
-            result[fieldname] = result[fieldname]._asdict()
+    if not isinstance(result, list):
+        result = [result]
+    for item in result:
+        for fieldname in item:
+            if isinstance(item[fieldname],
+                    (cerridwen.PlanetEvent,
+                     cerridwen.PlanetLongitude,
+                     cerridwen.MoonPhaseData)):
+                item[fieldname] = item[fieldname]._asdict()
     import json
     return json.dumps(result, indent=8)
 
@@ -119,6 +122,37 @@ def sun_endpoint():
     result = emit_json(cerridwen.compute_sun_data(jd=jd, observer=latlong))
 
     return make_response(result, 200)
+
+@app.route("/v1/events")
+def events_endpoint():
+    # TODO include rise/set events if latlong given
+
+    try:
+        date_start = flask.request.args.get('date_start')
+        if date_start:
+            jd_start = cerridwen.parse_jd_or_iso_date(date_start)
+        else:
+            jd_start = cerridwen.jd_now()
+
+        date_end = flask.request.args.get('date_end')
+        if date_end:
+            jd_end = cerridwen.parse_jd_or_iso_date(date_end)
+        else:
+            jd_end = jd_start + 40
+
+        limit = flask.request.args.get('limit')
+        if limit:
+            limit = int(limit)
+            raise ValueError('Limit must be non-negative')
+        else:
+            limit = 30
+    except ValueError as e:
+        return make_response(e, 400)
+
+    result = emit_json(cerridwen.get_events(jd_start=jd_start, jd_end=jd_end, limit=limit))
+
+    return make_response(result, 200)
+
 
 def start_api_server(port=None, debug=False):
     app.run(port=port, debug=debug)
