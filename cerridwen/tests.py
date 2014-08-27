@@ -64,6 +64,16 @@ def test_angle_finder_3():
     assert_equal(jd2iso(jd1), jd2iso(jd2))
     assert_equal(jd2iso(jd1), "2020-12-21 18:20:29")
 
+def test_sign_change_1():
+    jd = Mercury(2445548.93216).next_sign_change()
+    assert_equal(Mercury(jd).sign(), 'Libra')
+
+def test_sign_change_2():
+    jd = Mercury(2447727.9).next_sign_change()
+    assert_equal(Mercury(jd).sign(), 'Virgo')
+
+def test_mercury_semisextile_sun_impossible():
+    assert_equal(Mercury(2460932).next_angle_to_planet(Sun(2460932), 30), None)
 
 @raises(ValueError)
 def test_parse_date_invalid_1():
