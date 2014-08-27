@@ -1339,21 +1339,11 @@ if __name__ == '__main__':
 
     print(jd_now())
 
-    # bug at 2445548.93216 mercury sign change (enters Libra)
-    #print(Mercury(2445548.93216).next_sign_change())
     jd_start = iso2jd('2014-07-01 7:40:00Z')
     jd_end = jd_start + 365*1
     #generate_event_table(jd_start, jd_end)
 
-    # bug at 2447728 mercury sign change (enters Virgo)
-    #print(Mercury(2447727.9).next_sign_change())
     #for event in get_events(jd_now(), jd_now()+400, planet='mercury', type='ingress'): print(event, '\n')
 
-    generate_event_table(iso2jd('1983-07-01 7:40:00Z'))
-
-    #print('---')
-    #print(Moon().next_new_or_full_moon())
-
-    #generate_event_table(2447700)
 
 # TODO: move Planet stuff to separate file planets.py
