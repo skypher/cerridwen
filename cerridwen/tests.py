@@ -100,6 +100,13 @@ class HTTP_TestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
 
     def simple_events_test(self):
+        import sqlite3
+        conn = sqlite3.connect(cerridwen.dbfile)
+        c = conn.cursor()
+        c.execute('CREATE TABLE IF NOT EXISTS events (jd float, type text, subtype text, planet text, data text)')
+        conn.commit()
+        conn.close()
+
         response = self.app.get('/v1/events')
         self.assertEqual(response.status_code, 200)
 
