@@ -1334,16 +1334,4 @@ def compute_min_max_speeds():
             jd += 1
         print(p, min, max)
 
-if __name__ == '__main__':
-    np.set_printoptions(threshold=1000)
-
-    print(jd_now())
-
-    jd_start = iso2jd('2014-07-01 7:40:00Z')
-    jd_end = jd_start + 365*1
-    #generate_event_table(jd_start, jd_end)
-
-    #for event in get_events(jd_now(), jd_now()+400, planet='mercury', type='ingress'): print(event, '\n')
-
-
 # TODO: move Planet stuff to separate file planets.py
