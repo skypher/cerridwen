@@ -304,13 +304,13 @@ class Planet:
     def next_rise(self):
         if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=1)[1][0]
+        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=sweph.CALC_RISE)[1][0]
         return PlanetEvent('%s rises' % self.name(), jd)
 
     def next_set(self):
         if self.observer is None:
             raise ValueError('Rise/set times require observer longitude and latitude')
-        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=2)[1][0]
+        jd = sweph.rise_trans(self.jd, self.id, self.observer.long, self.observer.lat, rsmi=sweph.CALC_SET)[1][0]
         return PlanetEvent('%s sets' % self.name(), jd)
 
     def last_rise(self):
