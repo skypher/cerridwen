@@ -167,7 +167,7 @@ def olivier_endpoint():
 
 @app.route("/v1/events")
 def events_endpoint():
-    # TODO include rise/set events if latlong given
+    # TODO compute and include rise/set events if latlong given
 
     try:
         date_start = flask.request.args.get('date_start')
@@ -177,21 +177,66 @@ def events_endpoint():
             jd_start = cerridwen.jd_now()
 
         date_end = flask.request.args.get('date_end')
-        if date_end:
+        lookahead = flask.request.args.get('lookahead')
+        if lookahead and date_end:
+            raise ValueError('Must not specify date_end and lookahead both together')
+        elif date_end:
             jd_end = cerridwen.parse_jd_or_iso_date(date_end)
+        elif lookahead:
+            lookahead = int(lookahead)
+            if lookahead < 0:
+                raise ValueError('lookahead must be non-negative')
+            jd_end = jd_start + lookahead
         else:
             jd_end = jd_start + 40
 
         limit = flask.request.args.get('limit')
         if limit:
             limit = int(limit)
-            raise ValueError('Limit must be non-negative')
+            if limit < 0:
+                raise ValueError('limit must be non-negative')
         else:
             limit = 30
+
+        types = flask.request.args.get('types')
+        if types:
+            types = types.split(',')
+
+        subtypes = flask.request.args.get('subtypes')
+        if subtypes:
+            subtypes = subtypes.split(',')
+
+        planets = flask.request.args.get('planets')
+        if planets:
+            planets = planets.split(',')
+
+        datas = flask.request.args.get('datas')
+        if datas:
+            datas = datas.split(',')
+
     except ValueError as e:
         return make_response(e, 400)
 
-    result = emit_json(cerridwen.get_events(jd_start=jd_start, jd_end=jd_end, limit=limit))
+    def filter_fn(type, subtype, planet, data):
+        if types and type not in types:
+            return False
+        if subtypes and subtype not in subtypes:
+            return False
+        if planets and planet not in planets:
+            return False
+        if datas and data not in datas:
+            return False
+        return True
+
+    events = cerridwen.get_events(jd_start=jd_start, jd_end=jd_end, limit=limit,
+            filter_fn=filter_fn)
+    for event in events:
+        planet = getattr(cerridwen, event['planet'])
+        event['position'] = planet(event['jd']).position()
+        if event['type'] in [a[1] for a in cerridwen.aspects]:
+            partner_planet = getattr(cerridwen, event['data'])
+            event['data_position'] = partner_planet(event['jd']).position()
+    result = emit_json(events)
 
     return make_response(result, 200)
 
