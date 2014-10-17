@@ -328,7 +328,6 @@ class Planet:
     def aspect_possible(self, planet, angle):
         return True
 
-
     def next_angle_to_planet(self, planet, target_angle, jd=None,
                              orb="auto", lookahead="auto", sample_interval="auto",
                              passes="auto"):
@@ -383,6 +382,7 @@ class Planet:
         # TODO: set orb according to the planets involved, if "auto".
         # TODO this function does not support angles between planets at different
         # points in time. Consider this.
+
         assert(target_angle<360)
 
         if passes == "auto":
@@ -1121,23 +1121,25 @@ def compute_moon_data(jd=None, observer=None):
 
     return result
 
-def get_events(jd_start, jd_end, limit=100, type='%', subtype='%', planet='%', data='%'):
+def get_events(jd_start, jd_end, limit=100, filter_fn=None):
     # TODO we only support AND of filters, not OR
     import sqlite3
 
     conn = sqlite3.connect(dbfile)
-
     conn.row_factory = sqlite3.Row
+    if filter_fn is None:
+        def filter_fn(type, subtype, planet, data):
+            return True
+    conn.create_function("filter_event", 4, filter_fn)
 
     c = conn.cursor()
 
     sql = """SELECT * FROM events
              WHERE jd BETWEEN ? AND ?
-               AND type LIKE ? AND subtype LIKE ?
-               AND planet LIKE ? AND data LIKE ?
+               AND filter_event(type, subtype, planet, data) = 1
              ORDER BY jd ASC
              LIMIT ?"""
-    rows = c.execute(sql, (jd_start, jd_end, type, subtype, planet, data, limit))
+    rows = c.execute(sql, (jd_start, jd_end, limit))
 
     result = []
     for row in rows:
@@ -1150,8 +1152,8 @@ def get_events(jd_start, jd_end, limit=100, type='%', subtype='%', planet='%', d
 
     return result
 
-
-def generate_event_table(jd_start, jd_end):
+def generate_event_table(jd_start, jd_end, planets=None, aspects=None,
+                         compute_aspects=True, compute_ingresses=True):
     # TODO this generates events that slightly exceed jd_end
     import sqlite3
     
@@ -1198,6 +1200,11 @@ def generate_event_table(jd_start, jd_end):
             if flush_counter % 100 == 0:
                 conn.commit()
 
+    if planets is None:
+        planets = [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]
+    if aspects is None:
+        del aspects # defer to global
+
     # types: "square dexter" ... conjunction ... ingress retrograde direct
     # type / p1 / p2 or sign or NULL
     # frontend: "Mercury Rx in Pisces square dexter Saturn in Sagittarius"
@@ -1206,44 +1213,45 @@ def generate_event_table(jd_start, jd_end):
     # TODO retrograde/direct events, more planets
 
     # aspects
-    planets = [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]
     #aspects = [(72, 'quintile', 'dexter'), (288, 'quintile', 'sinister')]
     #planets = [Venus(), Mars()]
     #aspects = [(30, 'sextile', 'dexter')]
-    for planet in planets:
-        for partner_planet in planets:
-            if partner_planet.max_speed() < planet.max_speed():
-                for aspect in aspects:
-                    aspect_angle, aspect_name, aspect_mode = aspect
-                    if planet.aspect_possible(partner_planet, aspect_angle):
-                        event_type = aspect_name
-                        event_subtype = aspect_mode
-                        def event_function(jd):
-                            next_angle = planet.next_angle_to_planet(partner_planet, aspect_angle, jd)
-                            if next_angle:
-                                event_jd, delta_days, angle_diff = next_angle
-                                return (event_jd, event_type, event_subtype, planet.name(), partner_planet.name())
-                            # Mercury sextile Venus is possible but might not happen in the standard lookahead
-                            # period. Mercury quintile Venus is even unlikelier. In both cases we want to skip
-                            # the current lookahead period and look in the next.
-                            assert(planet.name() in ['Mercury', 'Venus'] and
-                                   partner_planet.name() in ['Mercury', 'Venus'] and
-                                   aspect_angle >= 60)
-                            print('Note: no %s (%s) aspect between %s and %s in period starting %f.' %
-                                    (aspect_name, aspect_mode, planet.name(), partner_planet.name(), jd))
-                            return None
-                        pump_events(event_function)
+    if compute_aspects:
+        for planet in planets:
+            for partner_planet in planets:
+                if partner_planet.max_speed() < planet.max_speed():
+                    for aspect in aspects:
+                        aspect_angle, aspect_name, aspect_mode = aspect
+                        if planet.aspect_possible(partner_planet, aspect_angle):
+                            event_type = aspect_name
+                            event_subtype = aspect_mode
+                            def event_function(jd):
+                                next_angle = planet.next_angle_to_planet(partner_planet, aspect_angle, jd)
+                                if next_angle:
+                                    event_jd, delta_days, angle_diff = next_angle
+                                    return (event_jd, event_type, event_subtype, planet.name(), partner_planet.name())
+                                # Mercury sextile Venus is possible but might not happen in the standard lookahead
+                                # period. Mercury quintile Venus is even unlikelier. In both cases we want to skip
+                                # the current lookahead period and look in the next.
+                                assert(planet.name() in ['Mercury', 'Venus'] and
+                                       partner_planet.name() in ['Mercury', 'Venus'] and
+                                       aspect_angle >= 60)
+                                print('Note: no %s (%s) aspect between %s and %s in period starting %f.' %
+                                        (aspect_name, aspect_mode, planet.name(), partner_planet.name(), jd))
+                                return None
+                            pump_events(event_function)
 
     # ingresses
-    for planet in planets:
-        def event_function(jd):
-            event_jd = planet.next_sign_change(jd)
-            event_type = 'ingress'
-            event_subtype = None
-            event_planet = planet.name()
-            event_data = planet.sign(event_jd)
-            return (event_jd, event_type, event_subtype, event_planet, event_data)
-        pump_events(event_function)
+    if compute_ingresses:
+        for planet in planets:
+            def event_function(jd):
+                event_jd = planet.next_sign_change(jd)
+                event_type = 'ingress'
+                event_subtype = None
+                event_planet = planet.name()
+                event_data = planet.sign(event_jd)
+                return (event_jd, event_type, event_subtype, event_planet, event_data)
+            pump_events(event_function)
 
     # retrogrades
     # TODO
