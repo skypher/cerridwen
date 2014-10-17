@@ -471,6 +471,74 @@ class Planet:
 
         return sorted(result, key=lambda event: event['jd'])
 
+    def retrogrades_within_period(self, jd_start, jd_end, sample_interval="auto", passes="auto"):
+        if passes == "auto":
+            passes = 8
+        if sample_interval == "auto":
+            sample_interval = self.default_sample_interval()
+
+        def find_retrograde_turn(jds):
+            def speed_at_jd(d):
+                return self.speed(d)
+            speed_at_jd_v = np.vectorize(speed_at_jd)
+            speeds = speed_at_jd_v(jds)
+            if debug_event_approximation:
+                print("The speeds: %f,%f,...,%f,%f (%d total):" %
+                        (speeds[0], speeds[1], speeds[-2], speeds[-1], speeds.size))
+
+            is_zero_crossing = np.roll(np.diff(np.sign(speeds)), 1) != 0
+
+            if is_zero_crossing.size == 0:
+                return None
+
+            matching_jds = jds[is_zero_crossing]
+            matches = dict(zip(matching_jds, speed_at_jd_v(matching_jds)))
+            return [matches, speed_at_jd]
+
+        events = approximate_event_date(jd_start, jd_end, find_retrograde_turn, lambda x: True,
+                                        distance_function=lambda a,b: math.fabs(a - b),
+                                        sample_interval=sample_interval, passes=passes)
+
+        result = []
+        for jd, speed in events.items():
+            type = 'direct' if speed > 0 else 'rx' 
+            result.append({'jd':jd, 'speed':speed, 'type': type})
+
+        return sorted(result, key=lambda event: event['jd'])
+
+    def next_rx_event(self, jd=None, lookahead='auto'):
+        # TODO implement support for stationing event
+        # TODO be smarter about lookahead
+        assert(not(isinstance(self, (Sun, Moon))))
+
+        if jd is None: jd = self.jd
+
+        if lookahead == "auto":
+            lookahead = self.aspect_lookahead()
+
+        if lookahead >= 0:
+            jd_start = jd
+            jd_end = jd+lookahead
+        else:
+            jd_start = jd+lookahead
+            jd_end = jd
+
+        rx_events = self.retrogrades_within_period(jd_start, jd_end)
+
+        if not rx_events:
+            return None
+
+        if lookahead < 0: # backwards search
+            rx_events.reverse()
+
+        next_rx_event_jd = rx_events[0]['jd']
+
+        delta_jd = next_rx_event_jd - jd
+        speed_zero_distance = math.fabs(rx_events[0]['speed'])
+
+        assert speed_zero_distance <= maximum_error, (rx_events[0]['speed'], speed_zero_distance)
+
+        return {'jd': next_rx_event_jd, 'type': rx_events[0]['type']}
 
     def mean_orbital_period(self):
         raise NotImplementedError
@@ -1166,7 +1234,7 @@ def generate_event_table(jd_start, jd_end):
     # TODO
     #for planet in [Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
     #    def event_function(jd):
-    #        event_jd = planet.next_rx_period(jd)
+    #        event_jd = planet.next_rx_event(jd)
     #        event_description = '%s turns retrograde' % (planet.name(), planet.sign(event_jd))
     #        return (event_jd, event_description)
     #        

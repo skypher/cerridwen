@@ -64,6 +64,28 @@ def test_angle_finder_3():
     assert_equal(jd2iso(jd1), jd2iso(jd2))
     assert_equal(jd2iso(jd1), "2020-12-21 18:20:29")
 
+def test_rx_finder_1():
+    "Rx finder forwards search"
+    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-03 7:40:00Z')).next_rx_event(lookahead=30)
+    assert_equal(mercury_retrograde_oct2014['type'], 'rx')
+    assert_equal(jd2iso(mercury_retrograde_oct2014['jd']), '2014-10-04 17:02:15')
+
+def test_rx_finder_2():
+    "Rx finder backwards search"
+    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-30 7:40:00Z')).next_rx_event(lookahead=-30)
+    assert_equal(mercury_retrograde_oct2014['type'], 'direct')
+    assert_equal(jd2iso(mercury_retrograde_oct2014['jd']), '2014-10-25 19:16:33')
+
+@raises(AssertionError)
+def test_rx_finder_sun():
+    "Sun does not rx"
+    Sun().next_rx_event()
+
+@raises(AssertionError)
+def test_rx_finder_moon():
+    "Moon does not rx"
+    Moon().next_rx_event()
+
 def test_sign_change_1():
     jd = Mercury(2445548.93216).next_sign_change()
     assert_equal(Mercury(jd).sign(), 'Libra')
