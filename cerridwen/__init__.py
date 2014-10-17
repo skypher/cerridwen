@@ -4,11 +4,6 @@
 # also for the sun, moon and asteroids. we also sometimes use
 # "planet" when the point in question is something like the AC.
 
-debug_angle_finder = 0
-
-maximum_angle_distance = 2e-6 # our guaranteed maximum error
-max_data_points = 100000
-
 import swisseph as sweph
 import time, calendar, astropy.time
 import math
@@ -17,6 +12,8 @@ import collections
 
 import sys
 import os
+
+from cerridwen.approximate import approximate_event_date, debug_event_approximation, maximum_error
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 sweph_dir = os.path.join(_ROOT, '../sweph')
@@ -360,8 +357,7 @@ class Planet:
                                                           jd_start, jd_end,
                                                           sample_interval=sample_interval,
                                                           passes=passes,
-                                                          orb=orb,
-                                                          first_match_only=True)
+                                                          orb=orb)
 
         if not next_angles:
             return None
@@ -374,13 +370,14 @@ class Planet:
         delta_jd = next_angle_jd - jd
         angle_diff = mod360_distance(target_angle, next_angles[0]['angle'])
 
-        assert angle_diff <= maximum_angle_distance, (target_angle, next_angles[0]['angle'], angle_diff)
+        assert angle_diff <= maximum_error, (target_angle, next_angles[0]['angle'], angle_diff)
 
         return (next_angle_jd, delta_jd, angle_diff)
 
+
     def angles_to_planet_within_period(self, planet, target_angle, jd_start,
                                        jd_end, sample_interval="auto",
-                                       passes="auto", orb="auto", first_match_only=False):
+                                       passes="auto", orb="auto"):
         # TODO let user specify precision and whether only the first match is
         # interesting. then limit the number of passes accordingly.
         # TODO: set orb according to the planets involved, if "auto".
@@ -392,160 +389,88 @@ class Planet:
             passes = 8
         if sample_interval == "auto":
             sample_interval = self.default_sample_interval()
-
-        # XXX debug help
-        #passes = 0
-        #sample_interval = 1/10
-
-        num_data_points = abs(jd_end - jd_start) / sample_interval
-        #print('data points', num_data_points)
-        if num_data_points > max_data_points:
-            # this used to be a safeguard against bogus matches in
-            # certain Rx periods. It still makes sense to leave this
-            # in for a while.
-            #sample_interval = 1/1000
-            #if debug_angle_finder:
-            #    print('data point maximum (%d) exceeded (have %d), reducing sample interval to %f.' %
-            #            (max_data_points, num_data_points, sample_interval))
-            if debug_angle_finder:
-                print('data point maximum (%d) exceeded (have %d), aborting pass.' %
-                        (max_data_points, num_data_points))
-            return None
         if orb == "auto":
-            orb = maximum_angle_distance * 10 # "exact"
-        assert(orb>=0)
-        if debug_angle_finder:
-            print('atpwp (:=%d deg): start=%f (%s), end=%f (%s), interval=%f, '
-                  'sample_pass=%d'
-                  % (target_angle, jd_start, jd2iso(jd_start), jd_end,
-                     jd2iso(jd_end), sample_interval, passes))
-        jds = np.arange(jd_start, jd_end, sample_interval)
-        def angle_at_jd(d):
-            return self.angle(planet, d)
-        angle_at_jd_v = np.vectorize(angle_at_jd)
-        angles = angle_at_jd_v(jds)
-        if debug_angle_finder:
-            print("The angles: %f,%f,...,%f,%f (%d total):" %
-                    (angles[0], angles[1], angles[-2], angles[-1], num_data_points))
-        target_adjusted_angles = (angles - target_angle) % 360
+            orb = maximum_error * 10 # "exact"
 
-        distances = np.vectorize(mod360_distance)(180, target_adjusted_angles)
-        distances -= 180
-        distances *= -1
+        assert(orb > 0 and orb < 360)
 
-        distances_gradient = np.diff(distances)
-        is_extremum = np.roll(np.diff(np.sign(distances_gradient)), 1) != 0
-        curves_left = np.roll(np.diff(distances_gradient), 1) > 0
-        is_minimum = np.logical_and(is_extremum, curves_left)
+        def find_local_minima(jds):
+            def angle_at_jd(d):
+                return self.angle(planet, d)
+            angle_at_jd_v = np.vectorize(angle_at_jd)
+            angles = angle_at_jd_v(jds)
+            if debug_event_approximation:
+                print("The angles: %f,%f,...,%f,%f (%d total):" %
+                        (angles[0], angles[1], angles[-2], angles[-1], angles.size))
+            target_adjusted_angles = (angles - target_angle) % 360
 
-        if debug_angle_finder:
-            for i in range(0, len(curves_left)):
-                if is_minimum[i]:
-                    print('found local minimum:',
-                            jds[i], distances[i],
-                            distances_gradient[i],
-                            is_extremum[i],
-                            curves_left[i],
-                            is_minimum[i]
-                            )
+            distances = np.vectorize(mod360_distance)(180, target_adjusted_angles)
+            distances -= 180
+            distances *= -1
 
-        # TODO I think we can do away with the legacy notion
-        # of starts and ends
-        jd_starts = jds[is_minimum] - sample_interval * 2
-        jd_ends = jds[is_minimum] + sample_interval * 2
+            distances_gradient = np.diff(distances)
+            is_extremum = np.roll(np.diff(np.sign(distances_gradient)), 1) != 0
+            curves_left = np.roll(np.diff(distances_gradient), 1) > 0
+            is_minimum = np.logical_and(is_extremum, curves_left)
 
-        assert(jd_starts.size == jd_ends.size)
+            ### PLOTTING SKETCH ###
+            #for i in range(0, len(gradient_signs)):
+            #    print(jds[i], jd2iso(jds[i]), target_adjusted_angles[i], gradient_signs[i])
 
-        if debug_angle_finder:
-            print(jds[is_minimum], jd_starts, jd_ends)
+            #import matplotlib.pyplot as plt
+            #print(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes))
+            #min_elems = min(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes), len(distances_g2),
+            #        len(distances_gradient_signs_gradient))
+            #filename = "%s-%s-pass%d.png" % (self, planet, passes)
+            #plt.plot(jds[:-3], distances[:-3], jds[:-3], distances_gradient[:-2], jds[:-3], distances_g2[:-1])
+            #plt.plot(jds[:-3], distances_g2[:-1])
+            #plt.plot(jds[:min_elems], distances[:min_elems],
+            #         jds[:min_elems], distances_gradient_signs_gradient[:min_elems],
+            #         jds[:min_elems], distances_g2[:min_elems])
+            #for i in range(0, len(distances_g2)):
+            #    if distances_gradient_signs_gradient[i] != 0 and distances_g2[i] > 0:
+            #        print('found local minimum:',
+            #                jds[i], distances[i], distances_gradient[i],
+            #                distances_gradient_signs_gradient[i],
+            #                distances_g2[i])
+            #plt.ylim(-0.5,.5)
+            #plt.savefig(filename)
 
-        if jd_starts.size == 0:
-            if debug_angle_finder:
-                print('no local minimum found')
-            return None
-
-        #for i in range(0, len(gradient_signs)):
-        #    print(jds[i], jd2iso(jds[i]), target_adjusted_angles[i], gradient_signs[i])
-
-        #import matplotlib.pyplot as plt
-        #print(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes))
-        #min_elems = min(len(jds),len(target_adjusted_angles), len(np.diff(target_adjusted_angles)), len(sign_changes), len(distances_g2),
-        #        len(distances_gradient_signs_gradient))
-        #filename = "%s-%s-pass%d.png" % (self, planet, passes)
-        #plt.plot(jds[:-3], distances[:-3], jds[:-3], distances_gradient[:-2], jds[:-3], distances_g2[:-1])
-        #plt.plot(jds[:-3], distances_g2[:-1])
-        #plt.plot(jds[:min_elems], distances[:min_elems],
-        #         jds[:min_elems], distances_gradient_signs_gradient[:min_elems],
-        #         jds[:min_elems], distances_g2[:min_elems])
-        #for i in range(0, len(distances_g2)):
-        #    if distances_gradient_signs_gradient[i] != 0 and distances_g2[i] > 0:
-        #        print('found local minimum:',
-        #                jds[i], distances[i], distances_gradient[i],
-        #                distances_gradient_signs_gradient[i],
-        #                distances_g2[i])
-        #plt.ylim(-0.5,.5)
-        #plt.savefig(filename)
-
-
-        matches = []
-
-        for i in range(jd_starts.size):
-            jd_start = jd_starts[i]
-            jd_end = jd_ends[i]
-            angle_start = angle_at_jd(jd_start)
-            angle_end = angle_at_jd(jd_end)
-            match = {'jd_start':jd_start, 'jd_end':jd_end,
-                     'angle_start': angle_start,
-                     'angle_end': angle_end}
-            if debug_angle_finder:
-                print('match: time range %s to %s, angle range %f to %f' %
-                        (jd2iso(jd_start), jd2iso(jd_end),
-                         angle_start, angle_end))
-            matches.append(match);
-
-        def match_mean(match):
-            jd_mean = (match['jd_start'] + match['jd_end']) / 2
-            angle_mean = angle_at_jd(jd_mean)
-            #print(match,angle_mean)
-            return {'jd': jd_mean, 'angle': angle_at_jd(jd_mean)}
-
-        refined_matches = []
-        for match in matches:
-            angular_distance = mod360_distance(angle_at_jd(match['jd_start']), angle_at_jd(match['jd_end']))
-            precision_reached = (angular_distance < maximum_angle_distance)
-            if precision_reached and debug_angle_finder:
-                print('STOP: precision reached (distance %f)' % angular_distance)
-            if passes and not precision_reached:
-                new_sample_interval = sample_interval * (1/100)
-                result = self.angles_to_planet_within_period(planet,
-                        target_angle,
-                        match['jd_start']-new_sample_interval*100,
-                        match['jd_end']+new_sample_interval*100,
-                        new_sample_interval,
-                        passes-1)
-                if result:
-                    refined_matches += result
+            if debug_event_approximation:
+                for i in range(0, len(curves_left)):
+                    if is_minimum[i]:
+                        print('found local minimum:',
+                                jds[i], distances[i],
+                                distances_gradient[i],
+                                is_extremum[i],
+                                curves_left[i],
+                                is_minimum[i]
+                                )
+                if is_minimum.size == 0:
+                    print('no local minimum found')
                 else:
-                    if debug_angle_finder:
-                        print('Notice: stopping angle finder with %d passes '
-                              'remaining.' % (passes-1))
-                    dist = mod360_distance(match_mean(match)['angle'], target_angle)
-                    if dist > orb:
-                        if debug_angle_finder:
-                            print('Notice: discarding match (%f is outside orb %f):' %
-                                    (dist, orb), match)
-                        continue
-                    refined_matches.append(match_mean(match))
-            else:
-                dist = mod360_distance(match_mean(match)['angle'], target_angle)
-                if dist > orb:
-                    if debug_angle_finder:
-                        print('Notice: discarding match (%f is outside orb %f):' %
-                                (dist, orb), match)
-                    continue
-                refined_matches.append(match_mean(match))
+                    print(jds[is_minimum])
 
-        return refined_matches
+            if is_minimum.size == 0:
+                return None
+
+            matching_jds = jds[is_minimum]
+            matches = dict(zip(matching_jds, angle_at_jd_v(matching_jds)))
+            return [matches, angle_at_jd]
+
+        def is_inside_orb(angle):
+            return mod360_distance(angle, target_angle) <= orb;
+
+        events = approximate_event_date(jd_start, jd_end, find_local_minima, is_inside_orb,
+                                        distance_function=mod360_distance,
+                                        sample_interval=sample_interval, passes=passes)
+
+        result = []
+        for jd, value in events.items():
+            result.append({'jd':jd, 'angle':value})
+
+        return sorted(result, key=lambda event: event['jd'])
+
 
     def mean_orbital_period(self):
         raise NotImplementedError
@@ -577,7 +502,7 @@ class Planet:
         assert(result_jd is not None)
         # we nudge the result a bit to the right to make sure it's in the
         # new sign. otherwise functions like time_left_in_sign get confused.
-        return result_jd[0] + maximum_angle_distance
+        return result_jd[0] + maximum_error
 
     def time_left_in_sign(self, jd=None):
         if jd is None: jd = self.jd
@@ -1279,7 +1204,7 @@ def main():
     print(moon.last_new_moon())
     print(moon.period_length())
 
-    if debug_angle_finder:
+    if debug_event_approximation:
         for i in range(1,100):
             moon = Moon()
             jd = jd_now()+i*30
