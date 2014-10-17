@@ -7,3 +7,8 @@ dist
 build
 attic
 docs/_build
+sweph/ast*
+site.luna
+newsite.try*
+cerridwen/*.png
+*.bak
