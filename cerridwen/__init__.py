@@ -972,6 +972,21 @@ class Saturn(Planet):
     def average_motion_per_year(self):
         return 12
 
+class Uranus(Planet):
+    def __init__(self, jd=None, observer=None):
+        if jd is None: jd = jd_now()
+        super(Uranus, self).__init__(sweph.URANUS, jd, observer)
+
+class Neptune(Planet):
+    def __init__(self, jd=None, observer=None):
+        if jd is None: jd = jd_now()
+        super(Neptune, self).__init__(sweph.NEPTUNE, jd, observer)
+
+class Pluto(Planet):
+    def __init__(self, jd=None, observer=None):
+        if jd is None: jd = jd_now()
+        super(Pluto, self).__init__(sweph.PLUTO, jd, observer)
+
 def days_frac_to_dhms(days_frac):
     """Convert a day float to integer days, hours, minutes and seconds.
 

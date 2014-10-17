@@ -123,6 +123,48 @@ def sun_endpoint():
 
     return make_response(result, 200)
 
+# just a quick hack; we don't really want any major calculations in this module.
+@app.route("/v1/olivier")
+def olivier_endpoint():
+    import math
+    import swisseph as sweph
+
+    latlong = None
+    jd = cerridwen.jd_now()
+
+    try:
+        date = flask.request.args.get('date')
+        if date:
+            jd = cerridwen.parse_jd_or_iso_date(date)
+
+        lat = flask.request.args.get('latitude')
+        if lat:
+            lat = float(lat)
+        long = flask.request.args.get('longitude')
+        if long:
+            long = float(long)
+        if (long is None and lat is not None) or (lat is None and long is not None):
+            raise ValueError("Specify both longitude and latitude or none")
+        if lat and long:
+            latlong = cerridwen.LatLong(lat, long)
+    except ValueError as e:
+        return make_response(e, 400)
+
+    result = collections.OrderedDict()
+
+    result['jd'] = jd
+    result['iso_date'] = cerridwen.jd2iso(jd)
+
+    from cerridwen import Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
+    for planet in [Sun(), Moon(), Mercury(), Venus(), Mars(), Jupiter(), Saturn(), Uranus(), Neptune(), Pluto()]:
+        result[planet.name().lower()] = math.radians(planet.longitude(jd));
+
+    if latlong:
+        result['houses'] = [math.radians(cusp) for cusp in sweph.houses(jd, latlong.lat, latlong.long)[0]]
+
+    import json
+    return make_response(json.dumps(result, indent=8), 200)
+
 @app.route("/v1/events")
 def events_endpoint():
     # TODO include rise/set events if latlong given
