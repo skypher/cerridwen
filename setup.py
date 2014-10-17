@@ -33,7 +33,7 @@ setup(name='cerridwen',
       maintainer='Leslie P. Polzer',
       maintainer_email='leslie.polzer@gmx.net',
       packages=['cerridwen'],
-      requires=['pyswisseph', 'numpy', 'astropy'],
+      requires=['pyswisseph', 'numpy', 'astropy(>=0.4)'],
       extras_require={'Flask':['flask']},
       entry_points={
           'console_scripts':
