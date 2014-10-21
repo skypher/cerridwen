@@ -19,12 +19,12 @@ def sandbox_test():
 
     print(jd2iso(Mercury(jd_start).next_rx_event()['jd']))
 
-    jd_start = iso2jd('0900-07-01 7:40:00')
-    jd_end = jd_start + 365*1300
-    generate_event_table(jd_start, jd_end, [Jupiter(), Saturn()],
-            [(0,'conjunction',None)], compute_ingresses=False)
+    jd_start = jd_now()
+    jd_end = jd_start + 365*0.5
+    #generate_event_table(jd_start, jd_end, [Jupiter(), Saturn()], [(0,'conjunction',None)], compute_ingresses=False)
+    generate_event_table(jd_start, jd_end)
 
-    for event in get_events(jd_now(), jd_now()+400, planet='mercury', type='ingress'): print(event, '\n')
+    #for event in get_events(jd_now(), jd_now()+400, planet='mercury', type='retrograde'): print(event, '\n')
 
 
 def compute_min_max_speeds():

@@ -1,13 +1,19 @@
 
-from .defs import dbfile
+from cerridwen import defs
 from .utils import jd2iso
+from .planets import Moon, Sun, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 
 def generate_event_table(jd_start, jd_end, planets=None, aspects=None,
-                         compute_aspects=True, compute_ingresses=True):
-    # TODO this generates events that slightly exceed jd_end
+                         compute_aspects=True, compute_ingresses=True, compute_retrogrades=True):
+    # TODO this generates events that slightly exceed jd_end;
+    # reject events that are beyond the requested period in pump_events() to fix this.
+    if planets is None:
+        planets = [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]
+    if aspects is None: aspects = defs.aspects
+
     import sqlite3
     
-    conn = sqlite3.connect(dbfile)
+    conn = sqlite3.connect(defs.dbfile)
 
     c = conn.cursor()
 
@@ -50,17 +56,10 @@ def generate_event_table(jd_start, jd_end, planets=None, aspects=None,
             if flush_counter % 100 == 0:
                 conn.commit()
 
-    if planets is None:
-        planets = [Moon(), Sun(), Mercury(), Venus(), Mars(), Jupiter(), Saturn()]
-    if aspects is None:
-        del aspects # defer to global
-
     # types: "square dexter" ... conjunction ... ingress retrograde direct
     # type / p1 / p2 or sign or NULL
     # frontend: "Mercury Rx in Pisces square dexter Saturn in Sagittarius"
     # db: "Mercury square dexter Saturn"
-
-    # TODO retrograde/direct events, more planets
 
     # aspects
     #aspects = [(72, 'quintile', 'dexter'), (288, 'quintile', 'sinister')]
@@ -104,14 +103,17 @@ def generate_event_table(jd_start, jd_end, planets=None, aspects=None,
             pump_events(event_function)
 
     # retrogrades
-    # TODO
-    #for planet in [Mercury(), Venus(), Mars(), Jupiter(), Saturn()]:
-    #    def event_function(jd):
-    #        event_jd = planet.next_rx_event(jd)
-    #        event_description = '%s turns retrograde' % (planet.name(), planet.sign(event_jd))
-    #        return (event_jd, event_description)
-    #        
-    #    pump_events(event_function)
+    for planet in planets:
+        if planet.name() not in ['Moon', 'Sun']:
+            def event_function(jd):
+                event = planet.next_rx_event(jd)
+                event_jd = event['jd']
+                event_type = event['type']
+                event_subtype = None
+                event_planet = planet.name()
+                event_data = planet.sign(event_jd)
+                return (event_jd, event_type, event_subtype, event_planet, event_data)
+            pump_events(event_function)
 
     conn.commit()
 

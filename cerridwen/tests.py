@@ -122,6 +122,10 @@ class HTTP_TestCase(unittest.TestCase):
         response = self.app.get('/v1/moon')
         self.assertEqual(response.status_code, 200)
 
+    def simple_olivier_test(self):
+        response = self.app.get('/v1/olivier')
+        self.assertEqual(response.status_code, 200)
+
     def simple_events_test(self):
         import sqlite3
         conn = sqlite3.connect(cerridwen.dbfile)

@@ -1,6 +1,8 @@
 #!/usr/bin/python3
 
 import cerridwen
+from cerridwen import defs
+from cerridwen.utils import jd2iso, jd_now, parse_jd_or_iso_date
 import flask
 import time
 import collections
@@ -172,16 +174,16 @@ def events_endpoint():
     try:
         date_start = flask.request.args.get('date_start')
         if date_start:
-            jd_start = cerridwen.parse_jd_or_iso_date(date_start)
+            jd_start = parse_jd_or_iso_date(date_start)
         else:
-            jd_start = cerridwen.jd_now()
+            jd_start = jd_now()
 
         date_end = flask.request.args.get('date_end')
         lookahead = flask.request.args.get('lookahead')
         if lookahead and date_end:
             raise ValueError('Must not specify date_end and lookahead both together')
         elif date_end:
-            jd_end = cerridwen.parse_jd_or_iso_date(date_end)
+            jd_end = parse_jd_or_iso_date(date_end)
         elif lookahead:
             lookahead = int(lookahead)
             if lookahead < 0:
@@ -233,7 +235,7 @@ def events_endpoint():
     for event in events:
         planet = getattr(cerridwen, event['planet'])
         event['position'] = planet(event['jd']).position()
-        if event['type'] in [a[1] for a in cerridwen.aspects]:
+        if event['type'] in [a[1] for a in defs.aspects]:
             partner_planet = getattr(cerridwen, event['data'])
             event['data_position'] = partner_planet(event['jd']).position()
     result = emit_json(events)
@@ -258,7 +260,7 @@ def main():
 
     print('Running basic sanity tests for Cerridwen...')
     import doctest
-    doctest.testmod(cerridwen, raise_on_error=True)
+    #doctest.testmod(cerridwen, raise_on_error=True)
     print('Done.')
 
     if args.test:
