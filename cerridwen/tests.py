@@ -1,7 +1,8 @@
 import cerridwen.api_server
 
-from cerridwen import Moon, Sun, Mercury, Venus, Mars, Jupiter, Saturn
-from cerridwen import LatLong, jd2iso, iso2jd, parse_jd_or_iso_date
+from cerridwen import LatLong
+from .planets import Moon, Sun, Mercury, Venus, Mars, Jupiter, Saturn
+from .utils import jd2iso, iso2jd, parse_jd_or_iso_date
 
 from nose.tools import assert_equal, assert_almost_equal, raises, assert_sequence_equal
 import unittest
@@ -11,7 +12,7 @@ def test_moon_age():
     assert_almost_equal(Moon(2456794.949305556).age(), 18.189345157705247)
 
 def test_speed():
-    assert_almost_equal(Moon(iso2jd('1983-07-01 7:40:00Z')).speed(), 11.989598784682862)
+    assert_almost_equal(Moon(iso2jd('1983-07-01 7:40:00')).speed(), 11.989598784682862)
 
 def test_period_length():
     assert_almost_equal(Moon(2456794.949305556).period_length(), 29.517968974076211)
@@ -66,13 +67,13 @@ def test_angle_finder_3():
 
 def test_rx_finder_1():
     "Rx finder forwards search"
-    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-03 7:40:00Z')).next_rx_event(lookahead=30)
+    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-03 7:40:00')).next_rx_event(lookahead=30)
     assert_equal(mercury_retrograde_oct2014['type'], 'rx')
     assert_equal(jd2iso(mercury_retrograde_oct2014['jd']), '2014-10-04 17:02:15')
 
 def test_rx_finder_2():
     "Rx finder backwards search"
-    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-30 7:40:00Z')).next_rx_event(lookahead=-30)
+    mercury_retrograde_oct2014 = Mercury(iso2jd('2014-10-30 7:40:00')).next_rx_event(lookahead=-30)
     assert_equal(mercury_retrograde_oct2014['type'], 'direct')
     assert_equal(jd2iso(mercury_retrograde_oct2014['jd']), '2014-10-25 19:16:33')
 

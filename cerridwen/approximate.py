@@ -5,11 +5,7 @@ import numpy as np
 
 import cerridwen
 
-debug_event_approximation = False
-
-maximum_error = 2e-6 # our guaranteed maximum error
-max_data_points = 100000
-
+from .defs import debug_event_approximation, maximum_error, max_data_points  
 
 def approximate_event_date(jd_start, jd_end, match_finder, match_filter,
                            distance_function=math.fabs,
