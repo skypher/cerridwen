@@ -2,6 +2,12 @@ Only major releases are documented here.
 
 1.4.0
 =====
+* Rework package structure, picking apart
+  the mudball that was __init__.py.
+
+* Add planets Uranus, Neptune and Pluto.
+  Very basic interface only.
+
 * Add planets Mercury, Venus, Mars, Jupiter, Saturn.
   Their interface is yet incomplete though.
 
@@ -13,7 +19,8 @@ Only major releases are documented here.
 
 * Add Moon.last_new_or_full_moon()
 
-* Precision lowered to 0.0072 arc seconds (was 0.0036).
+* Precision lowered to 0.0072 arc seconds (was 0.0036),
+  it was needed for proper ingress calculation.
 
 * Update code for astropy 0.4 (rewrote one test case).
 
