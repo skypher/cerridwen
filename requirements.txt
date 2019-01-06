@@ -1,16 +1,20 @@
+asn1crypto==0.24.0
 astropy==3.1.1
--e git+https://github.com/skypher/cerridwen@30d7c8d8cc4dc72b75ad3a7a8a136a596dbb40e3#egg=cerridwen
-cryptography==1.2.3
-Flask==0.10.1
-idna==2.0
+-e git+https://github.com/skypher/cerridwen@9046520258384372068bf1bc3348943893e462e1#egg=cerridwen
+cffi==1.11.5
+Click==7.0
+cryptography==2.4.2
+Flask==1.0.2
+idna==2.8
 itsdangerous==0.24
-Jinja2==2.8
+Jinja2==2.10
 MarkupSafe==0.23
 nose==1.3.7
 numpy==1.15.4
 pyasn1==0.1.9
+pycparser==2.19
 pyinotify==0.9.6
-pyOpenSSL==0.15.1
+pyOpenSSL==18.0.0
 pyswisseph==2.0.0.post2
 six==1.10.0
-Werkzeug==0.10.4
+Werkzeug==0.14.1
