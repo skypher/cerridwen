@@ -6,15 +6,15 @@ README = open(os.path.join(here, 'README.rst')).read()
 #NEWS = open(os.path.join(here, 'NEWS.txt')).read()
 
 
-version = '1.4.0'
+version = '1.4.1'
 
 setup(name='cerridwen',
       version=version,
       description='Accurate solar system data for everyone',
       long_description=README,
       author='Leslie P. Polzer',
-      author_email='leslie.polzer@gmx.net',
-      url='http://cerridwen.viridian-project.de/',
+      author_email='polzer@fastmail.com',
+      url='http://cerridwen.bluemagician.vc/',
       license='MIT',
       classifiers=[
         # Get strings from http://pypi.python.org/pypi?%3Aaction=list_classifiers
@@ -31,7 +31,7 @@ setup(name='cerridwen',
       , "Topic :: Utilities"
       ],
       maintainer='Leslie P. Polzer',
-      maintainer_email='leslie.polzer@gmx.net',
+      maintainer_email='polzer@fastmail.com',
       packages=['cerridwen'],
       requires=['pyswisseph', 'numpy', 'astropy(>=0.4)'],
       extras_require={'Flask':['flask']},
