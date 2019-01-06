@@ -53,8 +53,3 @@ at Travis CI:
 .. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
     :target: https://travis-ci.org/skypher/cerridwen
 
-
-.. image:: https://d2weczhvl823v0.cloudfront.net/skypher/cerridwen/trend.png
-   :alt: Bitdeli badge
-   :target: https://bitdeli.com/free
-
