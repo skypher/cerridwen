@@ -1,6 +1,6 @@
 language: python
 python:
-  - "3.3"
+  - "3.5"
 # command to install dependencies
 install: "pip install -r requirements.txt"
 # # command to run tests
@@ -8,6 +8,6 @@ script: nosetests cerridwen
 notifications:
   email:
     recipients:
-      - leslie.polzer@gmx.net
+      - polzer@fastmail.com
     on_success: never
     on_failure: change
