@@ -1,4 +1,5 @@
 import astropy
+import math
 from .defs import time_scale
 
 def jd_now():

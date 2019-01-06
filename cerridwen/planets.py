@@ -372,6 +372,10 @@ class Planet:
             if is_minimum.size == 0:
                 return None
 
+            # each diff pass results in an array that is one element smaller.
+            # newer versions of numpy actually check for the boolean array size
+            # to match the base array's size, so we have to fudge it.
+            is_minimum = np.append(is_minimum, [False, False])
             matching_jds = jds[is_minimum]
             matches = dict(zip(matching_jds, angle_at_jd_v(matching_jds)))
             return [matches, angle_at_jd]
