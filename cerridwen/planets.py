@@ -372,7 +372,7 @@ class Planet:
             if is_minimum.size == 0:
                 return None
 
-            # each diff pass results in an array that is one element smaller.
+            # [NOTE1] each diff pass results in an array that is one element smaller.
             # newer versions of numpy actually check for the boolean array size
             # to match the base array's size, so we have to fudge it.
             is_minimum = np.append(is_minimum, [False, False])
@@ -413,6 +413,8 @@ class Planet:
             if is_zero_crossing.size == 0:
                 return None
 
+            # account for np.diff, see [NOTE1]
+            is_zero_crossing = np.append(is_zero_crossing, [False])
             matching_jds = jds[is_zero_crossing]
             matches = dict(zip(matching_jds, speed_at_jd_v(matching_jds)))
             return [matches, speed_at_jd]
