@@ -15,6 +15,7 @@ factors at a certain point in time.
 
    demo-server
    quickstart
+   from-source
    faq
    contributing
    requirements

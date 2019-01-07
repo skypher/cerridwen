@@ -33,7 +33,7 @@ HTTP API
 
    Get sun data for the current moment, including rise and set times for Berlin.
 
-   URI: http://cerridwen.viridian-project.de/api/v1/sun?latitude=52.5&longitude=13.3
+   URI: http://cerridwen.bluemagician.vc/api/v1/sun?latitude=52.5&longitude=13.3
 
    .. sourcecode:: javascript
 
@@ -91,7 +91,7 @@ HTTP API
    Get moon data for the current moment, including rise and set times for the
    Berlin area of Germany.
 
-   URI: http://cerridwen.viridian-project.de/api/v1/sun?latitude=52.5&longitude=13.3
+   URI: http://cerridwen.bluemagician.vc/api/v1/sun?latitude=52.5&longitude=13.3
 
    .. sourcecode:: javascript
 
