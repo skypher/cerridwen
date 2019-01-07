@@ -32,8 +32,7 @@ sys.path.insert(0, os.path.abspath('../cerridwen'))
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.coverage',
-    'sphinx.ext.intersphinx',
-    'sphinxcontrib.httpdomain',
+    'sphinx.ext.intersphinx'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
