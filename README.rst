@@ -4,6 +4,10 @@ Cerridwen
 .. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
     :target: https://travis-ci.org/skypher/cerridwen
 
+.. image:: https://readthedocs.org/projects/cerridwen/badge/?version=latest
+    :target: https://cerridwen.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
+
 Cerridwen provides geocentric planetary data that is suitable for
 a broad spectrum of astronomical and astrological applications,
 with a focus on our solar system. Among its data you will find,
