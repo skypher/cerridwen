@@ -1,5 +1,11 @@
 Only major releases are documented here.
 
+1.4.1
+=====
+* Recover from bitrot.
+
+* Amend documentation
+
 1.4.0
 =====
 * Rework package structure, picking apart

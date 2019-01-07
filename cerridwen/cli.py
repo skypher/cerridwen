@@ -28,18 +28,19 @@ def emit_moon_text(result):
     next_new_moon = result['next_new_moon']
     print("next new moon: %s: in %s (%s / %f)" %
             (next_new_moon.description,
-             cerridwen.render_delta_days(next_new_moon.delta_days),
+             cerridwen.utils.render_delta_days(next_new_moon.delta_days),
              cerridwen.jd2iso(next_new_moon.jd), next_new_moon.jd))
 
     next_full_moon = result['next_full_moon']
     print("next full moon: %s: in %s (%s / %f)" %
             (next_full_moon.description,
-             cerridwen.render_delta_days(next_full_moon.delta_days),
+             cerridwen.utils.render_delta_days(next_full_moon.delta_days),
              cerridwen.jd2iso(next_full_moon.jd), next_full_moon.jd))
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog='Cerridwen')
+    parser.add_argument('--version', action='version', version='%(prog)s ' + cerridwen.__VERSION__)
     args = parser.parse_args()
 
     #cerridwen.quicktest()

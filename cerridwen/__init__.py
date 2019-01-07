@@ -9,9 +9,9 @@ from .utils import jd_now, jd2iso, parse_jd_or_iso_date
 from .planets import Moon, Sun, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto
 from .planets import PlanetEvent, PlanetLongitude, Ascendant, MoonPhaseData
 from .approximate import approximate_event_date
+from .version import __VERSION__
 
-# TODO use astropy.coordinates.EarthLocation instead, when it's
-# available (v0.4)
+# TODO use astropy.coordinates.EarthLocation instead, if it's available (v0.4)
 class LatLong():
     def __init__(self, lat, long):
         if lat > 90 or lat < -90:

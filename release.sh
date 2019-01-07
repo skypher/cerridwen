@@ -1,6 +1,9 @@
 set -x
 
+PATH=/usr/local/bin:$PATH
+
 rm -rf dist
 git push origin master
-python setup.py develop sdist bdist_wheel
+python3 setup.py develop sdist bdist_wheel
+
 twine upload -r pypi dist/*
