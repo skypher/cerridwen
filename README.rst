@@ -1,6 +1,9 @@
 Cerridwen
 =========
 
+.. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
+    :target: https://travis-ci.org/skypher/cerridwen
+
 Cerridwen provides geocentric planetary data that is suitable for
 a broad spectrum of astronomical and astrological applications,
 with a focus on our solar system. Among its data you will find,
@@ -49,7 +52,4 @@ your project.
 
 Also, you can check out the status of the current development version
 at Travis CI:
-
-.. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
-    :target: https://travis-ci.org/skypher/cerridwen
 

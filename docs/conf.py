@@ -32,7 +32,6 @@ sys.path.insert(0, os.path.abspath('../cerridwen'))
 extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.coverage',
-    'sphinx.ext.pngmath',
     'sphinx.ext.intersphinx',
     'sphinxcontrib.httpdomain',
 ]
