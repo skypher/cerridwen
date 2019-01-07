@@ -39,7 +39,8 @@ def emit_moon_text(result):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(prog='Cerridwen')
+    parser.add_argument('--version', action='version', version='%(prog)s ' + cerridwen.__VERSION__)
     args = parser.parse_args()
 
     #cerridwen.quicktest()
