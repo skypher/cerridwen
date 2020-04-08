@@ -17,4 +17,4 @@ pyinotify==0.9.6
 pyOpenSSL==18.0.0
 pyswisseph==2.0.0.post2
 six==1.10.0
-Werkzeug==0.14.1
+Werkzeug==0.15.3
