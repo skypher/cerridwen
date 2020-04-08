@@ -65,7 +65,7 @@ class PlanetLongitude():
         """Return a tuple with fixed order consisting of sign, degrees,
         arc minutes and seconds, with the latter three being truncated
         (or rounded down) integers.
-
+        
         This is basically a convenience function for printing."""
         return (self.sign,
                 math.floor(self.deg),
@@ -155,30 +155,30 @@ class Planet:
     def longitude(self, jd=None):
         "Ecliptical longitude of planet"
         if jd is None: jd = self.jd
-        long = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0][0]
+        long = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0]
         return long
 
     def latitude(self, jd=None):
         "Ecliptical latitude of planet"
         if jd is None: jd = self.jd
-        lat = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0][1]
+        lat = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[1]
         return lat
 
     def rectascension(self, jd=None):
         if jd is None: jd = self.jd
         flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
-        ra = sweph.calc_ut(jd, self.id, flags)[0][0]
+        ra = sweph.calc_ut(jd, self.id, flags)[0]
         return ra
 
     def declination(self, jd=None):
         if jd is None: jd = self.jd
         flags = sweph.FLG_SWIEPH + sweph.FLG_EQUATORIAL
-        dec = sweph.calc_ut(jd, self.id, flags)[0][1]
+        dec = sweph.calc_ut(jd, self.id, flags)[1]
         return dec
 
     def distance(self, jd=None):
         if jd is None: jd = self.jd
-        distance = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[0][2]
+        distance = sweph.calc_ut(jd, self.id, sweph.FLG_SWIEPH)[2]
         return distance
 
     def position(self, jd=None):
@@ -191,7 +191,7 @@ class Planet:
 
     def speed(self, jd=None):
         if jd is None: jd = self.jd
-        speed = sweph.calc_ut(jd, self.id)[0][3]
+        speed = sweph.calc_ut(jd, self.id)[3]
         return speed
 
     def max_speed(self):
@@ -425,7 +425,7 @@ class Planet:
 
         result = []
         for jd, speed in events.items():
-            type = 'direct' if speed > 0 else 'rx'
+            type = 'direct' if speed > 0 else 'rx' 
             result.append({'jd':jd, 'speed':speed, 'type': type})
 
         return sorted(result, key=lambda event: event['jd'])
@@ -553,7 +553,7 @@ class Moon(Planet):
         return 2.7
 
     def aspect_lookahead(self):
-        return 40
+        return 40 
 
     def mean_orbital_period(self):
         # http://hpiers.obspm.fr/eop-pc/models/constants.html
@@ -708,7 +708,7 @@ class Mercury(Planet):
         return 75
 
     def aspect_lookahead(self):
-        return 365 * 2.5
+        return 365 * 2.5 
 
     def aspect_possible(self, planet, angle):
         if planet.name() == 'Sun':
@@ -910,3 +910,4 @@ class Pluto(Planet):
     def __init__(self, jd=None, observer=None):
         if jd is None: jd = jd_now()
         super(Pluto, self).__init__(sweph.PLUTO, jd, observer)
+
