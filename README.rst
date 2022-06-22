@@ -1,3 +1,5 @@
+CERRIDWEN IS NOT BEING MAINTAINED AT THIS TIME
+
 Cerridwen
 =========
 
