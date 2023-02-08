@@ -3,7 +3,7 @@ astropy==3.1.1
 -e git+https://github.com/skypher/cerridwen@9046520258384372068bf1bc3348943893e462e1#egg=cerridwen
 cffi==1.11.5
 Click==7.0
-cryptography==3.2
+cryptography==39.0.1
 Flask==1.0.2
 idna==2.8
 itsdangerous==0.24
