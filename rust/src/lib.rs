@@ -27,7 +27,7 @@ pub use crate::planets::{
 };
 pub use crate::utils::{
     angle_to_aspect_name, aspect_name_to_angle, days_frac_to_dhms, iso2jd, jd2iso, jd_now,
-    mod360_distance, parse_jd_or_iso_date, render_delta_days,
+    mod360_distance, parse_jd_or_iso_date, parse_jd_or_iso_date_in_tz, render_delta_days,
 };
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

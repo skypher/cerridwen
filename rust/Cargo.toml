@@ -34,6 +34,7 @@ events = ["rusqlite", "serde", "serde_json"]
 swisseph = "0.1.1"
 libswisseph-sys = "0.1.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"] }
 once_cell = "1"
 

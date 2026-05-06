@@ -12,9 +12,9 @@ use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     compute_houses, compute_moon_data_with, compute_sun_data, eclipses_within_period, jd2iso,
-    jd_now, parse_house_system, parse_jd_or_iso_date, valid_house_systems, ASPECTS, Eclipse,
-    Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
-    VoidOfCourseData,
+    jd_now, parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems, ASPECTS,
+    Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude,
+    SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -141,7 +141,7 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
 
 async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     let jd_start = match q.get("date_start") {
-        Some(s) => match parse_jd_or_iso_date(s) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, q.get("tz").map(|x| x.as_str())) {
             Ok(j) => j,
             Err(e) => return bad_request(&e),
         },
@@ -151,7 +151,7 @@ async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
     let jd_end = if q.contains_key("lookahead") && q.contains_key("date_end") {
         return bad_request("Must not specify date_end and lookahead both together");
     } else if let Some(s) = q.get("date_end") {
-        match parse_jd_or_iso_date(s) {
+        match parse_jd_or_iso_date_in_tz(s, q.get("tz").map(|x| x.as_str())) {
             Ok(j) => j,
             Err(e) => return bad_request(&e),
         }
@@ -345,7 +345,7 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     let dbfile = std::env::var("CERRIDWEN_EVENTS_DB").unwrap_or_else(|_| "events.db".into());
 
     let jd_start = match q.get("date_start") {
-        Some(s) => match parse_jd_or_iso_date(s) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, q.get("tz").map(|x| x.as_str())) {
             Ok(j) => j,
             Err(e) => return bad_request(&e),
         },
@@ -355,7 +355,7 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     let jd_end = if q.contains_key("lookahead") && q.contains_key("date_end") {
         return bad_request("Must not specify date_end and lookahead both together");
     } else if let Some(s) = q.get("date_end") {
-        match parse_jd_or_iso_date(s) {
+        match parse_jd_or_iso_date_in_tz(s, q.get("tz").map(|x| x.as_str())) {
             Ok(j) => j,
             Err(e) => return bad_request(&e),
         }
@@ -428,8 +428,9 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 fn parse_observer_and_jd(
     q: &HashMap<String, String>,
 ) -> Result<(Option<f64>, Option<LatLong>), String> {
+    let tz = q.get("tz").map(|s| s.as_str());
     let jd = match q.get("date") {
-        Some(s) => Some(parse_jd_or_iso_date(s)?),
+        Some(s) => Some(parse_jd_or_iso_date_in_tz(s, tz)?),
         None => None,
     };
     let lat = q.get("latitude").map(|s| s.parse::<f64>()).transpose()
