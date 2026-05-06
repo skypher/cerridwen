@@ -146,9 +146,9 @@ async fn body_endpoint(
     let planet = match canonical {
         Some(c) => match body_for(c, jd) {
             Some(p) => p,
-            None => return bad_request(&format!("unknown body: {}", name)),
+            None => return not_found(&format!("unknown body: {}", name)),
         },
-        None => return bad_request(&format!("unknown body: {}", name)),
+        None => return not_found(&format!("unknown body: {}", name)),
     };
 
     let mut o = serde_json::Map::new();
@@ -331,7 +331,15 @@ fn json_ok(v: Value) -> Response {
 }
 
 fn bad_request(msg: &str) -> Response {
-    let mut resp = (StatusCode::BAD_REQUEST, msg.to_string()).into_response();
+    error_response(StatusCode::BAD_REQUEST, msg)
+}
+
+fn not_found(msg: &str) -> Response {
+    error_response(StatusCode::NOT_FOUND, msg)
+}
+
+fn error_response(status: StatusCode, msg: &str) -> Response {
+    let mut resp = (status, msg.to_string()).into_response();
     resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
     resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
     resp
