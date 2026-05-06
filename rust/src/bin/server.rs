@@ -12,7 +12,7 @@ use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    compute_transits, default_transit_bodies, eclipses_within_period, jd2iso, jd_now,
+    compute_transits, default_transit_bodies, eclipses_within_period, jd2iso, jd_now, next_return,
     parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems,
     ActiveTransit, ASPECTS, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData,
     PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
@@ -49,7 +49,8 @@ async fn main() {
         .route("/v1/houses", get(houses_endpoint))
         .route("/v1/eclipses", get(eclipses_endpoint))
         .route("/v1/transits", get(transits_endpoint))
-        .route("/v1/events.ics", get(events_ics_endpoint));
+        .route("/v1/events.ics", get(events_ics_endpoint))
+        .route("/v1/return", get(return_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -175,6 +176,61 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let body_name = match q.get("body") {
+        Some(s) => s.as_str(),
+        None => return bad_request("required: body=<Sun|Moon|Mercury|...>"),
+    };
+    let canonical = match canonical_body_name(body_name) {
+        Some(c) => c,
+        None => return not_found(&format!("unknown body: {}", body_name)),
+    };
+    let body_planet = match body_for(canonical, 0.0) {
+        Some(p) => p,
+        None => return not_found(&format!("unknown body: {}", body_name)),
+    };
+    let body_id = body_planet.id;
+
+    let natal_jd = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let start_jd = match q.get("start_jd").or(q.get("start_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+
+    let return_jd = match next_return(body_id, natal_jd, start_jd) {
+        Some(j) => j,
+        None => return bad_request(&format!(
+            "no return found for {} within typical period", canonical
+        )),
+    };
+
+    // Natal longitude for context.
+    let natal_lon = swisseph::swe::calc_ut(natal_jd, body_id as u32, 2)
+        .map(|r| r.out[0])
+        .unwrap_or(f64::NAN);
+
+    json_ok(json!({
+        "body": canonical,
+        "natal_jd": natal_jd,
+        "natal_iso": jd2iso(natal_jd),
+        "natal_longitude": natal_lon,
+        "search_from_jd": start_jd,
+        "return_jd": return_jd,
+        "return_iso": jd2iso(return_jd),
+        "delta_days": return_jd - start_jd,
+    }))
 }
 
 async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {

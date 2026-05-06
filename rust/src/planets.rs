@@ -1273,6 +1273,36 @@ fn find_zero_crossings<E: FnMut(f64) -> f64 + ?Sized>(
 }
 
 // ------------------------------------------------------------------------------------------------
+// Returns — find when a body returns to a given natal longitude.
+// ------------------------------------------------------------------------------------------------
+
+/// Find the next time `body_id` returns to its natal longitude (sampled at
+/// `natal_jd`). `search_from_jd` is where the forward search begins.
+/// Returns `None` if no return occurs within the body's typical period.
+pub fn next_return(body_id: i32, natal_jd: f64, search_from_jd: f64) -> Option<f64> {
+    init_swe();
+    let natal_lon = swe::calc_ut(natal_jd, body_id as u32, SEFLG_SWIEPH as u32)
+        .ok()?.out[0];
+    let target = FixedZodiacPoint::new(natal_lon);
+    let body = Planet::new(body_id, Some(search_from_jd), None);
+    // Body-specific search horizons — solar return is annual, lunar return
+    // is monthly, outer-planet returns can take decades. We give enough
+    // headroom for one full period plus a margin.
+    let lookahead = match body_id {
+        SE_SUN => 380.0,
+        SE_MOON => 31.0,
+        SE_MERCURY => 100.0,
+        SE_VENUS => 230.0,
+        SE_MARS => 690.0,
+        SE_JUPITER => 365.0 * 12.5,
+        SE_SATURN => 365.0 * 30.0,
+        _ => 365.0 * 200.0,
+    };
+    body.next_angle_to_planet(&target, 0.0, Some(search_from_jd), Some(lookahead), None, None, None)
+        .map(|(jd, _, _)| jd)
+}
+
+// ------------------------------------------------------------------------------------------------
 // Transits — given a natal chart, find which transiting bodies are currently
 // within orb of forming an aspect to the natal positions.
 // ------------------------------------------------------------------------------------------------
