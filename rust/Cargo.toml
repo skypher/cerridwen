@@ -1,0 +1,49 @@
+[package]
+name = "cerridwen"
+version = "1.2.0"
+edition = "2021"
+description = "Accurate solar system data for everyone (Rust port)"
+license = "MIT AND AGPL-3.0-only"
+authors = ["Leslie P. Polzer <polzer@fastmail.com>"]
+repository = "https://github.com/skypher/cerridwen"
+
+[lib]
+name = "cerridwen"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cerridwen"
+path = "src/bin/cli.rs"
+
+[[bin]]
+name = "cerridwen-server"
+path = "src/bin/server.rs"
+required-features = ["server"]
+
+[[bin]]
+name = "cerridwen-event-generator"
+path = "src/bin/event_generator.rs"
+required-features = ["events"]
+
+[features]
+default = []
+server = ["events", "axum", "tokio", "tower-http", "serde_json"]
+events = ["rusqlite", "serde", "serde_json"]
+
+[dependencies]
+swisseph = "0.1.1"
+libswisseph-sys = "0.1.2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+clap = { version = "4", features = ["derive"] }
+once_cell = "1"
+
+# Optional — enabled via features.
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"], optional = true }
+tower-http = { version = "0.5", features = ["cors"], optional = true }
+
+[dev-dependencies]
+approx = "0.5"

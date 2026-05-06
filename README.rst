@@ -1,14 +1,5 @@
-CERRIDWEN IS NOT BEING MAINTAINED AT THIS TIME
-
 Cerridwen
 =========
-
-.. image:: https://travis-ci.org/skypher/cerridwen.svg?branch=master
-    :target: https://travis-ci.org/skypher/cerridwen
-
-.. image:: https://readthedocs.org/projects/cerridwen/badge/?version=latest
-    :target: https://cerridwen.readthedocs.io/en/latest/?badge=latest
-    :alt: Documentation Status
 
 Cerridwen provides geocentric planetary data that is suitable for
 a broad spectrum of astronomical and astrological applications,
@@ -23,39 +14,17 @@ factors at a certain point in time.
 Cerridwen comes with a simple command-line utility and a JSON server,
 but is also designed to serve as a basis for your own application.
 
+This repository hosts the **Rust port**. The original Python package was
+retired; the Rust crate under ``rust/`` is API-compatible at the data-shape
+level and ships the same CLI and HTTP server, backed by Swiss Ephemeris.
+
+See ``rust/README.md`` for build and usage instructions.
 
 Features
 --------
 
 * Get comprehensive data on the sun and moon at almost any point in time
-
 * Rely on the high precision of the NASA JPL ephemeris
-
-* Make use of a powerful numpy-based algorithm for planetary event
-  finding, (e.g. full moon, squares of planets etc.)
-
+* Find planetary events (full moon, squares of planets, retrograde stations, etc.)
 * Work with Julian and ISO dates
-
-* Use Cerridwen's JSON API to ensure loose coupling
-
-* Extend Cerridwen with ease to suit your own needs
-
-
-Documentation
--------------
-
-Cerridwen's full documentation can be found at http://cerridwen.readthedocs.org/
-
-
-Stability
----------
-
-Cerridwen includes a basic test suite for its calculations and API.
-
-At this time the API is reasonably stable but may change without
-warning. Please let me know when you need better API stability for
-your project.
-
-Also, you can check out the status of the current development version
-at Travis CI:
-
+* Use the JSON HTTP API to integrate from any language

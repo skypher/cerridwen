@@ -1,0 +1,970 @@
+use std::ffi::CStr;
+
+use libswisseph_sys as raw;
+use swisseph::swe;
+
+use crate::approximate::approximate_event_date;
+use crate::defs::{init_swe, MAXIMUM_ERROR, SIGNS};
+use crate::utils::{jd2iso, jd_now, mod360_distance};
+use crate::LatLong;
+
+// Constants pulled from swephexp.h.
+const SEFLG_SWIEPH: i32 = 2;
+const SEFLG_SPEED: i32 = 256;
+const SEFLG_EQUATORIAL: i32 = 2 * 1024;
+const SE_CALC_RISE: i32 = 1;
+const SE_CALC_SET: i32 = 2;
+// Body IDs.
+pub const SE_SUN: i32 = 0;
+pub const SE_MOON: i32 = 1;
+pub const SE_MERCURY: i32 = 2;
+pub const SE_VENUS: i32 = 3;
+pub const SE_MARS: i32 = 4;
+pub const SE_JUPITER: i32 = 5;
+pub const SE_SATURN: i32 = 6;
+pub const SE_URANUS: i32 = 7;
+pub const SE_NEPTUNE: i32 = 8;
+pub const SE_PLUTO: i32 = 9;
+
+// ------------------------------------------------------------------------------------------------
+// PlanetEvent / PlanetLongitude / Ascendant / FixedZodiacPoint
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct PlanetEvent {
+    pub description: String,
+    pub jd: f64,
+}
+
+impl PlanetEvent {
+    pub fn new(description: impl Into<String>, jd: f64) -> Self {
+        Self { description: description.into(), jd }
+    }
+
+    pub fn iso_date(&self) -> String {
+        jd2iso(self.jd)
+    }
+
+    pub fn delta_days(&self, rel_jd: Option<f64>) -> f64 {
+        self.jd - rel_jd.unwrap_or_else(jd_now)
+    }
+}
+
+impl std::fmt::Display for PlanetEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {}", self.description, self.iso_date())
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PlanetLongitude {
+    pub absolute_degrees: f64,
+}
+
+impl PlanetLongitude {
+    pub fn new(absolute_degrees: f64) -> Self {
+        Self { absolute_degrees }
+    }
+
+    pub fn sign(&self) -> &'static str {
+        let normalized = self.absolute_degrees.rem_euclid(360.0);
+        SIGNS[(normalized / 30.0) as usize]
+    }
+
+    pub fn deg(&self) -> f64 {
+        self.absolute_degrees.rem_euclid(360.0) % 30.0
+    }
+
+    pub fn min(&self) -> f64 {
+        (self.deg() % 1.0) * 60.0
+    }
+
+    pub fn sec(&self) -> f64 {
+        ((self.deg() % 1.0) * 60.0 - self.min().floor()) * 60.0
+    }
+
+    /// (sign, deg, min, sec) — the latter three truncated for printing.
+    pub fn rel_tuple(&self) -> (&'static str, i64, i64, i64) {
+        (
+            self.sign(),
+            self.deg().floor() as i64,
+            self.min().floor() as i64,
+            self.sec().floor() as i64,
+        )
+    }
+}
+
+impl std::fmt::Display for PlanetLongitude {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (sign, deg, min, sec) = self.rel_tuple();
+        write!(f, "{} {} {}' {}\"", deg, &sign[..3], min, sec)
+    }
+}
+
+pub struct Ascendant {
+    pub jd: f64,
+    pub long: f64,
+    pub lat: f64,
+}
+
+impl Ascendant {
+    pub fn new(long: f64, lat: f64, jd: Option<f64>) -> Self {
+        init_swe();
+        Self { jd: jd.unwrap_or_else(jd_now), long, lat }
+    }
+
+    pub fn name(&self) -> &'static str {
+        "Ascendant"
+    }
+
+    pub fn longitude(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let (_cusps, ascmc) = swe::houses(jd, self.lat, self.long, b'P' as i32);
+        ascmc[0]
+    }
+
+    pub fn position(&self, jd: Option<f64>) -> PlanetLongitude {
+        PlanetLongitude::new(self.longitude(jd))
+    }
+
+    pub fn sign(&self, jd: Option<f64>) -> &'static str {
+        self.position(jd).sign()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct FixedZodiacPoint {
+    pub degrees: f64,
+}
+
+impl FixedZodiacPoint {
+    pub fn new(degrees: f64) -> Self {
+        Self { degrees }
+    }
+
+    pub fn longitude(&self, _jd: Option<f64>) -> f64 {
+        self.degrees
+    }
+
+    pub fn position(&self, jd: Option<f64>) -> PlanetLongitude {
+        PlanetLongitude::new(self.longitude(jd))
+    }
+
+    pub fn sign(&self, jd: Option<f64>) -> &'static str {
+        self.position(jd).sign()
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Moon phase data
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct MoonPhaseData {
+    pub trend: &'static str,
+    pub shape: &'static str,
+    pub quarter: Option<i32>,
+    pub quarter_english: Option<&'static str>,
+}
+
+// ------------------------------------------------------------------------------------------------
+// Planet trait + concrete bodies
+// ------------------------------------------------------------------------------------------------
+
+/// Anything that has a longitude on the ecliptic at a moment in time.
+///
+/// Planets, the Sun, the Moon, and a `FixedZodiacPoint` are all implementors.
+pub trait Body {
+    fn longitude(&self, jd: f64) -> f64;
+    fn name(&self) -> String;
+    fn max_speed(&self) -> f64;
+    /// Used by `next_angle_to_planet` as the default forward search horizon.
+    fn aspect_lookahead(&self) -> f64 {
+        365.0 * 100.0
+    }
+    /// Whether an aspect of the given angle to `other` is geometrically possible.
+    fn aspect_possible(&self, _other: &dyn Body, _angle: f64) -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Planet {
+    pub id: i32,
+    pub jd: f64,
+    pub observer: Option<LatLong>,
+}
+
+impl Planet {
+    pub fn new(id: i32, jd: Option<f64>, observer: Option<LatLong>) -> Self {
+        init_swe();
+        Self { id, jd: jd.unwrap_or_else(jd_now), observer }
+    }
+
+    pub fn name(&self) -> String {
+        swe::get_planet_name(self.id)
+    }
+
+    /// Apparent diameter in arc minutes (ecliptical, geocentric).
+    pub fn diameter(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let mut attr = [0.0_f64; 20];
+        let mut serr = [0_i8; 256];
+        unsafe {
+            raw::swe_pheno_ut(jd, self.id, SEFLG_SWIEPH, attr.as_mut_ptr(), serr.as_mut_ptr());
+        }
+        attr[3] * 60.0
+    }
+
+    pub fn longitude_at(&self, jd: f64) -> f64 {
+        let r = swe::calc_ut(jd, self.id as u32, SEFLG_SWIEPH as u32)
+            .expect("calc_ut failed");
+        r.out[0]
+    }
+
+    pub fn latitude(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let r = swe::calc_ut(jd, self.id as u32, SEFLG_SWIEPH as u32)
+            .expect("calc_ut failed");
+        r.out[1]
+    }
+
+    pub fn rectascension(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let flags = (SEFLG_SWIEPH | SEFLG_EQUATORIAL) as u32;
+        let r = swe::calc_ut(jd, self.id as u32, flags).expect("calc_ut failed");
+        r.out[0]
+    }
+
+    pub fn declination(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let flags = (SEFLG_SWIEPH | SEFLG_EQUATORIAL) as u32;
+        let r = swe::calc_ut(jd, self.id as u32, flags).expect("calc_ut failed");
+        r.out[1]
+    }
+
+    pub fn distance(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let r = swe::calc_ut(jd, self.id as u32, SEFLG_SWIEPH as u32)
+            .expect("calc_ut failed");
+        r.out[2]
+    }
+
+    pub fn position(&self, jd: Option<f64>) -> PlanetLongitude {
+        PlanetLongitude::new(self.longitude_at(jd.unwrap_or(self.jd)))
+    }
+
+    pub fn sign(&self, jd: Option<f64>) -> &'static str {
+        self.position(jd).sign()
+    }
+
+    pub fn speed(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let flags = (SEFLG_SWIEPH | SEFLG_SPEED) as u32;
+        let r = swe::calc_ut(jd, self.id as u32, flags).expect("calc_ut failed");
+        r.out[3]
+    }
+
+    pub fn is_rx(&self, jd: Option<f64>) -> bool {
+        self.speed(jd) < 0.0
+    }
+
+    pub fn is_stationing(&self, jd: Option<f64>) -> bool {
+        self.speed(jd).abs() < 0.2
+    }
+
+    /// Angle from `self` to `other`, modulo 360.
+    pub fn angle_to(&self, other: &dyn Body, jd: f64) -> f64 {
+        (self.longitude_at(jd) - other.longitude(jd)).rem_euclid(360.0)
+    }
+
+    /// Phase illumination as a 0..=1 fraction. Mirrors the Python base-class
+    /// definition: `(180 - mod360_distance(angle_to_sun, 180)) / 180`.
+    pub fn illumination(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let sun = Sun::new();
+        (180.0 - mod360_distance(self.angle_to(&sun.0, jd), 180.0)) / 180.0
+    }
+
+    pub fn next_rise(&self) -> PlanetEvent {
+        let observer = self.observer.as_ref()
+            .expect("Rise/set times require observer longitude and latitude");
+        let jd = rise_trans(self.jd, self.id, observer, SE_CALC_RISE);
+        PlanetEvent::new(format!("{} rises", self.name()), jd)
+    }
+
+    pub fn next_set(&self) -> PlanetEvent {
+        let observer = self.observer.as_ref()
+            .expect("Rise/set times require observer longitude and latitude");
+        let jd = rise_trans(self.jd, self.id, observer, SE_CALC_SET);
+        PlanetEvent::new(format!("{} sets", self.name()), jd)
+    }
+
+    pub fn last_rise(&self) -> PlanetEvent {
+        let observer = self.observer.as_ref()
+            .expect("Rise/set times require observer longitude and latitude");
+        let jd = rise_trans(self.jd - 1.0, self.id, observer, SE_CALC_RISE);
+        PlanetEvent::new(format!("{} rises", self.name()), jd)
+    }
+
+    pub fn last_set(&self) -> PlanetEvent {
+        let observer = self.observer.as_ref()
+            .expect("Rise/set times require observer longitude and latitude");
+        let jd = rise_trans(self.jd - 1.0, self.id, observer, SE_CALC_SET);
+        PlanetEvent::new(format!("{} sets", self.name()), jd)
+    }
+
+    /// Find the next time this body forms an exact `target_angle` to `other`.
+    ///
+    /// `lookahead` may be negative for a backwards search (matching the Python).
+    pub fn next_angle_to_planet<B: Body + ?Sized>(
+        &self,
+        other: &B,
+        target_angle: f64,
+        jd: Option<f64>,
+        lookahead: Option<f64>,
+        sample_interval: Option<f64>,
+        passes: Option<u32>,
+        orb: Option<f64>,
+    ) -> Option<(f64, f64, f64)> {
+        let jd = jd.unwrap_or(self.jd);
+        assert!(target_angle < 360.0);
+
+        let lookahead = lookahead.unwrap_or_else(|| {
+            self.aspect_lookahead().min(other.aspect_lookahead())
+        });
+        let (jd_start, jd_end) = if lookahead >= 0.0 {
+            (jd, jd + lookahead)
+        } else {
+            (jd + lookahead, jd)
+        };
+
+        let mut next_angles = self.angles_to_planet_within_period(
+            other,
+            target_angle,
+            jd_start,
+            jd_end,
+            sample_interval,
+            passes,
+            orb,
+        );
+
+        if next_angles.is_empty() {
+            return None;
+        }
+
+        if lookahead < 0.0 {
+            next_angles.reverse();
+        }
+
+        let (next_jd, value) = next_angles[0];
+        let delta_jd = next_jd - jd;
+        let angle_diff = mod360_distance(target_angle, value);
+        Some((next_jd, delta_jd, angle_diff))
+    }
+
+    pub fn angles_to_planet_within_period<B: Body + ?Sized>(
+        &self,
+        other: &B,
+        target_angle: f64,
+        jd_start: f64,
+        jd_end: f64,
+        sample_interval: Option<f64>,
+        passes: Option<u32>,
+        orb: Option<f64>,
+    ) -> Vec<(f64, f64)> {
+        assert!(target_angle < 360.0);
+        let passes = passes.unwrap_or(8);
+        let sample_interval = sample_interval.unwrap_or_else(|| self.default_sample_interval());
+        let orb = orb.unwrap_or(MAXIMUM_ERROR * 10.0);
+        assert!(orb > 0.0 && orb < 360.0);
+
+        let id = self.id;
+        let mut eval: Box<dyn FnMut(f64) -> f64 + '_> = Box::new(move |d: f64| -> f64 {
+            let me = swe::calc_ut(d, id as u32, SEFLG_SWIEPH as u32)
+                .expect("calc_ut failed").out[0];
+            (me - other.longitude(d)).rem_euclid(360.0)
+        });
+        let mut find_matches =
+            |jds: &[f64], eval: &mut Box<dyn FnMut(f64) -> f64 + '_>|
+            -> Option<Vec<(f64, f64)>> {
+                find_local_minima(jds, &mut **eval, target_angle)
+            };
+
+        let result = approximate_event_date(
+            jd_start,
+            jd_end,
+            &mut eval,
+            &mut find_matches,
+            &|v| mod360_distance(v, target_angle) <= orb,
+            &mod360_distance,
+            sample_interval,
+            passes,
+        );
+
+        let mut events = result.unwrap_or_default();
+        events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        events
+    }
+
+    pub fn retrogrades_within_period(
+        &self,
+        jd_start: f64,
+        jd_end: f64,
+        sample_interval: Option<f64>,
+        passes: Option<u32>,
+    ) -> Vec<(f64, f64)> {
+        let passes = passes.unwrap_or(8);
+        let sample_interval = sample_interval.unwrap_or_else(|| self.default_sample_interval());
+
+        let id = self.id;
+        let flags = (SEFLG_SWIEPH | SEFLG_SPEED) as u32;
+        let mut eval: Box<dyn FnMut(f64) -> f64 + '_> = Box::new(move |d: f64| -> f64 {
+            swe::calc_ut(d, id as u32, flags).expect("calc_ut failed").out[3]
+        });
+        let mut find_matches =
+            |jds: &[f64], eval: &mut Box<dyn FnMut(f64) -> f64 + '_>|
+            -> Option<Vec<(f64, f64)>> {
+                find_zero_crossings(jds, &mut **eval)
+            };
+
+        let result = approximate_event_date(
+            jd_start,
+            jd_end,
+            &mut eval,
+            &mut find_matches,
+            &|_| true,
+            &|a, b| (a - b).abs(),
+            sample_interval,
+            passes,
+        );
+        let mut events = result.unwrap_or_default();
+        events.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        events
+    }
+
+    /// Returns (jd, "rx" | "direct").
+    pub fn next_rx_event(
+        &self,
+        jd: Option<f64>,
+        lookahead: Option<f64>,
+    ) -> Option<(f64, &'static str)> {
+        assert!(self.id != SE_SUN && self.id != SE_MOON, "Sun/Moon do not retrograde");
+        let jd = jd.unwrap_or(self.jd);
+        let lookahead = lookahead.unwrap_or_else(|| self.aspect_lookahead());
+        let (jd_start, jd_end) = if lookahead >= 0.0 {
+            (jd, jd + lookahead)
+        } else {
+            (jd + lookahead, jd)
+        };
+
+        let mut events = self.retrogrades_within_period(jd_start, jd_end, None, None);
+        if events.is_empty() {
+            return None;
+        }
+        if lookahead < 0.0 {
+            events.reverse();
+        }
+        let (event_jd, speed) = events[0];
+        let kind = if speed > 0.0 { "direct" } else { "rx" };
+        Some((event_jd, kind))
+    }
+
+    pub fn default_sample_interval(&self) -> f64 {
+        1.0 / (self.max_speed() * 3.0)
+    }
+
+    pub fn next_sign_change(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        let cur_sign = self.sign(Some(jd));
+        let cur_idx = SIGNS.iter().position(|s| *s == cur_sign).unwrap();
+        let next_idx = (cur_idx + 1) % 12;
+        let target = FixedZodiacPoint::new(next_idx as f64 * 30.0);
+        let result = self.next_angle_to_planet(
+            &target,
+            0.0,
+            Some(jd),
+            Some(self.sign_change_lookahead()),
+            None,
+            None,
+            None,
+        );
+        let (event_jd, _, _) = result.expect("next_sign_change found nothing");
+        // Nudge slightly past the boundary so callers don't see the previous sign.
+        event_jd + MAXIMUM_ERROR
+    }
+
+    pub fn time_left_in_sign(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.jd);
+        self.next_sign_change(Some(jd)) - jd
+    }
+
+    /// Default lookahead used for `next_sign_change`. Body-specific values
+    /// keep the search grid bounded — the universal fallback would blow past
+    /// `MAX_DATA_POINTS` for fast bodies like the Moon.
+    pub fn sign_change_lookahead(&self) -> f64 {
+        match self.id {
+            SE_SUN => 35.0,
+            SE_MOON => 2.7,
+            SE_MERCURY => 75.0,
+            SE_VENUS => 150.0,
+            SE_MARS => 300.0,
+            SE_JUPITER => 365.0 * 1.5,
+            SE_SATURN => 365.0 * 3.5,
+            // Outer slow movers — generous but still bounded.
+            _ => 365.0 * 30.0,
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Display impls — match the Python `__str__` outputs.
+// ------------------------------------------------------------------------------------------------
+
+impl std::fmt::Display for Planet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {}", self.name(), jd2iso(self.jd))
+    }
+}
+
+impl std::fmt::Display for Ascendant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} at {}", self.name(), jd2iso(self.jd))
+    }
+}
+
+impl std::fmt::Display for FixedZodiacPoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Fixed zodiac point at {} degrees ({})",
+            self.degrees,
+            self.position(None)
+        )
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Concrete body wrappers — these just specialise Planet for the Body trait and
+// add body-specific tunables (max_speed, dignity, …).
+// ------------------------------------------------------------------------------------------------
+
+macro_rules! body_wrapper {
+    ($t:ident, $id:ident) => {
+        #[derive(Clone, Debug)]
+        pub struct $t(pub Planet);
+
+        impl $t {
+            pub fn new() -> Self { Self::at(None, None) }
+            pub fn at_jd(jd: f64) -> Self { Self::at(Some(jd), None) }
+            pub fn with_observer(observer: LatLong) -> Self { Self::at(None, Some(observer)) }
+            pub fn at(jd: Option<f64>, observer: Option<LatLong>) -> Self {
+                Self(Planet::new($id, jd, observer))
+            }
+        }
+
+        impl std::ops::Deref for $t {
+            type Target = Planet;
+            fn deref(&self) -> &Planet { &self.0 }
+        }
+    };
+}
+
+body_wrapper!(Sun, SE_SUN);
+body_wrapper!(Moon, SE_MOON);
+body_wrapper!(Mercury, SE_MERCURY);
+body_wrapper!(Venus, SE_VENUS);
+body_wrapper!(Mars, SE_MARS);
+body_wrapper!(Jupiter, SE_JUPITER);
+body_wrapper!(Saturn, SE_SATURN);
+body_wrapper!(Uranus, SE_URANUS);
+body_wrapper!(Neptune, SE_NEPTUNE);
+body_wrapper!(Pluto, SE_PLUTO);
+
+// ---- Body trait implementations ----------------------------------------------------------------
+
+impl Body for Planet {
+    fn longitude(&self, jd: f64) -> f64 { self.longitude_at(jd) }
+    fn name(&self) -> String { swe::get_planet_name(self.id) }
+    fn max_speed(&self) -> f64 {
+        // Generic fallback; concrete wrappers below provide accurate per-body values.
+        match self.id {
+            SE_SUN => 1.0197676,
+            SE_MOON => 15.3882655,
+            SE_MERCURY => 2.2026512,
+            SE_VENUS => 1.2598435,
+            SE_MARS => 0.7913920,
+            SE_JUPITER => 0.2423810,
+            SE_SATURN => 0.1308402,
+            _ => 0.1,
+        }
+    }
+    fn aspect_lookahead(&self) -> f64 {
+        match self.id {
+            SE_SUN => 365.0 * 3.5,
+            SE_MOON => 40.0,
+            SE_MERCURY => 365.0 * 2.5,
+            SE_VENUS => 365.0 * 3.5,
+            SE_MARS => 365.0 * 3.5,
+            SE_JUPITER => 365.0 * 23.0,
+            SE_SATURN => 365.0 * 30.0 + 365.0 * 40.0,
+            _ => 365.0 * 100.0,
+        }
+    }
+    fn aspect_possible(&self, other: &dyn Body, angle: f64) -> bool {
+        match self.id {
+            SE_MERCURY => match other.name().as_str() {
+                "Sun" => angle < 27.8 || angle > (360.0 - 27.8),
+                "Venus" => angle < 27.8 + 47.8 || angle > (360.0 - (27.8 + 47.8)),
+                _ => true,
+            },
+            SE_VENUS => match other.name().as_str() {
+                "Sun" => angle < 47.8 || angle > (360.0 - 47.8),
+                "Mercury" => angle < 27.8 + 47.8 || angle > (360.0 - (27.8 + 47.8)),
+                _ => true,
+            },
+            _ => true,
+        }
+    }
+}
+
+impl Body for FixedZodiacPoint {
+    fn longitude(&self, _jd: f64) -> f64 { self.degrees }
+    fn name(&self) -> String { format!("Fixed zodiac point at {}", self.degrees) }
+    fn max_speed(&self) -> f64 { 0.0 }
+    fn aspect_lookahead(&self) -> f64 { 1.0e10 }
+}
+
+// Forward Body impl for each concrete wrapper via Deref.
+macro_rules! impl_body_via_deref {
+    ($t:ident) => {
+        impl Body for $t {
+            fn longitude(&self, jd: f64) -> f64 { self.0.longitude_at(jd) }
+            fn name(&self) -> String { self.0.name() }
+            fn max_speed(&self) -> f64 { Body::max_speed(&self.0) }
+            fn aspect_lookahead(&self) -> f64 { Body::aspect_lookahead(&self.0) }
+            fn aspect_possible(&self, other: &dyn Body, angle: f64) -> bool {
+                Body::aspect_possible(&self.0, other, angle)
+            }
+        }
+    };
+}
+impl_body_via_deref!(Sun);
+impl_body_via_deref!(Moon);
+impl_body_via_deref!(Mercury);
+impl_body_via_deref!(Venus);
+impl_body_via_deref!(Mars);
+impl_body_via_deref!(Jupiter);
+impl_body_via_deref!(Saturn);
+impl_body_via_deref!(Uranus);
+impl_body_via_deref!(Neptune);
+impl_body_via_deref!(Pluto);
+
+// ---- Body-specific behaviour --------------------------------------------------------------------
+
+impl Sun {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Leo" => Some("rulership"),
+            "Aries" => Some("exaltation"),
+            "Libra" => Some("detriment"),
+            "Aquarius" => Some("fall"),
+            _ => None,
+        }
+    }
+    pub fn average_motion_per_year(&self) -> f64 { 360.0 }
+    pub fn mean_orbital_period(&self) -> f64 { 365.256363004 }
+}
+
+impl Moon {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Cancer" => Some("rulership"),
+            "Taurus" => Some("exaltation"),
+            "Capricorn" => Some("detriment"),
+            "Scorpio" => Some("fall"),
+            _ => None,
+        }
+    }
+    pub fn mean_orbital_period(&self) -> f64 { 27.32166155 }
+
+    pub fn speed_ratio(&self, jd: Option<f64>) -> f64 {
+        (self.0.speed(jd) - 11.76) / 3.57
+    }
+    pub fn diameter_ratio(&self, jd: Option<f64>) -> f64 {
+        (self.0.diameter(jd) - 29.3) / 4.8
+    }
+
+    pub fn age(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.0.jd);
+        jd - self.last_new_moon(Some(jd)).jd
+    }
+
+    pub fn period_length(&self, jd: Option<f64>) -> f64 {
+        let jd = jd.unwrap_or(self.0.jd);
+        self.next_new_moon(Some(jd)).jd - self.last_new_moon(Some(jd)).jd
+    }
+
+    pub fn phase(&self, jd: Option<f64>) -> MoonPhaseData {
+        let jd = jd.unwrap_or(self.0.jd);
+        let sun = Sun::new();
+        let angle = self.0.angle_to(&sun.0, jd);
+
+        let quarter = if angle > 350.0 || angle < 10.0 {
+            Some(0)
+        } else if angle > 80.0 && angle < 100.0 {
+            Some(1)
+        } else if angle > 170.0 && angle < 190.0 {
+            Some(2)
+        } else if angle > 260.0 && angle < 290.0 {
+            Some(3)
+        } else {
+            None
+        };
+        let quarter_english = quarter.map(|q| {
+            ["new", "first quarter", "full", "third quarter"][q as usize]
+        });
+
+        let (trend, shape) = if angle > 0.0 && angle < 90.0 {
+            ("waxing", "crescent")
+        } else if angle >= 90.0 && angle < 180.0 {
+            ("waxing", "gibbous")
+        } else if angle >= 190.0 && angle < 270.0 {
+            ("waning", "gibbous")
+        } else {
+            ("waning", "crescent")
+        };
+
+        MoonPhaseData { trend, shape, quarter, quarter_english }
+    }
+
+    pub fn next_new_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let jd = jd.unwrap_or(self.0.jd);
+        let sun = Sun::new();
+        let (event_jd, _, _) = self.0.next_angle_to_planet(
+            &sun.0, 0.0, Some(jd), None, None, None, None,
+        ).expect("next_new_moon");
+        let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
+        PlanetEvent::new(format!("New moon in {}", sign), event_jd)
+    }
+
+    pub fn last_new_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let jd = jd.unwrap_or(self.0.jd);
+        let sun = Sun::new();
+        let (event_jd, _, _) = self.0.next_angle_to_planet(
+            &sun.0, 0.0, Some(jd), Some(-40.0), None, None, None,
+        ).expect("last_new_moon");
+        let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
+        PlanetEvent::new(format!("New moon in {}", sign), event_jd)
+    }
+
+    pub fn next_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let jd = jd.unwrap_or(self.0.jd);
+        let sun = Sun::new();
+        let (event_jd, _, _) = self.0.next_angle_to_planet(
+            &sun.0, 180.0, Some(jd), None, None, None, None,
+        ).expect("next_full_moon");
+        let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
+        PlanetEvent::new(format!("Full moon in {}", sign), event_jd)
+    }
+
+    pub fn last_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let jd = jd.unwrap_or(self.0.jd);
+        let sun = Sun::new();
+        let (event_jd, _, _) = self.0.next_angle_to_planet(
+            &sun.0, 180.0, Some(jd), Some(-40.0), None, None, None,
+        ).expect("last_full_moon");
+        let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
+        PlanetEvent::new(format!("Full moon in {}", sign), event_jd)
+    }
+
+    pub fn next_new_or_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let new = self.next_new_moon(jd);
+        let full = self.next_full_moon(jd);
+        if new.jd < full.jd { new } else { full }
+    }
+
+    pub fn last_new_or_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
+        let new = self.last_new_moon(jd);
+        let full = self.last_full_moon(jd);
+        if new.jd > full.jd { new } else { full }
+    }
+}
+
+impl Mercury {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Gemini" => Some("rulership"),
+            "Virgo" => Some("rulership/exaltation"),
+            "Sagittarius" => Some("fall"),
+            "Pisces" => Some("fall/detriment"),
+            _ => None,
+        }
+    }
+    pub fn mean_orbital_period(&self) -> f64 { 87.9691 }
+}
+
+impl Venus {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Libra" | "Taurus" => Some("rulership"),
+            "Pisces" => Some("exaltation"),
+            "Virgo" => Some("detriment"),
+            "Aries" | "Scorpio" => Some("fall"),
+            _ => None,
+        }
+    }
+}
+
+impl Mars {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Aries" | "Scorpio" => Some("rulership"),
+            "Capricorn" => Some("exaltation"),
+            "Cancer" => Some("detriment"),
+            "Libra" | "Taurus" => Some("fall"),
+            _ => None,
+        }
+    }
+}
+
+impl Jupiter {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Sagittarius" | "Pisces" => Some("rulership"),
+            "Cancer" => Some("exaltation"),
+            "Capricorn" => Some("detriment"),
+            "Gemini" | "Virgo" => Some("fall"),
+            _ => None,
+        }
+    }
+}
+
+impl Saturn {
+    pub fn dignity(&self, jd: Option<f64>) -> Option<&'static str> {
+        match self.0.sign(jd) {
+            "Capricorn" | "Aquarius" => Some("rulership"),
+            "Libra" => Some("exaltation"),
+            "Aries" => Some("detriment"),
+            "Cancer" | "Leo" => Some("fall"),
+            _ => None,
+        }
+    }
+}
+
+// Wrapper-side overrides aren't needed: Planet::sign_change_lookahead switches
+// on the body id, so the wrappers inherit the right value via Deref.
+
+// ------------------------------------------------------------------------------------------------
+// Match-finder helpers (the moral equivalent of the inner Python closures).
+// ------------------------------------------------------------------------------------------------
+
+fn find_local_minima<E: FnMut(f64) -> f64 + ?Sized>(
+    jds: &[f64],
+    eval: &mut E,
+    target_angle: f64,
+) -> Option<Vec<(f64, f64)>> {
+    if jds.len() < 4 {
+        return None;
+    }
+    let angles: Vec<f64> = jds.iter().map(|&d| eval(d)).collect();
+
+    // Convert angles into signed distance from target_angle (positive = approaching).
+    let target_adjusted: Vec<f64> = angles.iter()
+        .map(|&a| (a - target_angle).rem_euclid(360.0))
+        .collect();
+    let distances: Vec<f64> = target_adjusted.iter()
+        .map(|&v| -(mod360_distance(180.0, v) - 180.0))
+        .collect();
+
+    // first derivative
+    let grad: Vec<f64> = distances.windows(2).map(|w| w[1] - w[0]).collect();
+    if grad.len() < 2 {
+        return None;
+    }
+    // d(sign(grad)) shifted right by 1 (Python: np.roll(np.diff(np.sign(grad)), 1))
+    let signs: Vec<f64> = grad.iter()
+        .map(|v| if *v > 0.0 { 1.0 } else if *v < 0.0 { -1.0 } else { 0.0 })
+        .collect();
+    let sign_changes: Vec<f64> = signs.windows(2).map(|w| w[1] - w[0]).collect();
+    // and second derivative of distances (similarly shifted)
+    let grad2: Vec<f64> = grad.windows(2).map(|w| w[1] - w[0]).collect();
+
+    // is_extremum[i] = sign_changes[i-1] != 0  (the np.roll by 1)
+    // curves_left[i] = grad2[i-1] > 0
+    // is_minimum[i] = is_extremum[i] && curves_left[i]
+    let mut matches = Vec::new();
+    let n = distances.len();
+    // Valid index range: i must allow sign_changes[i-1] and grad2[i-1] to exist,
+    // i.e. 1 <= i <= sign_changes.len() and 1 <= i <= grad2.len(). Both
+    // sign_changes and grad2 have length n-2, so 1 <= i <= n-2.
+    for i in 1..=n.saturating_sub(2) {
+        let is_extremum = sign_changes.get(i - 1).copied().unwrap_or(0.0) != 0.0;
+        let curves_left = grad2.get(i - 1).copied().unwrap_or(0.0) > 0.0;
+        if is_extremum && curves_left {
+            matches.push((jds[i], angles[i]));
+        }
+    }
+    if matches.is_empty() {
+        None
+    } else {
+        Some(matches)
+    }
+}
+
+fn find_zero_crossings<E: FnMut(f64) -> f64 + ?Sized>(
+    jds: &[f64],
+    eval: &mut E,
+) -> Option<Vec<(f64, f64)>> {
+    if jds.len() < 3 {
+        return None;
+    }
+    let speeds: Vec<f64> = jds.iter().map(|&d| eval(d)).collect();
+    let signs: Vec<f64> = speeds.iter()
+        .map(|v| if *v > 0.0 { 1.0 } else if *v < 0.0 { -1.0 } else { 0.0 })
+        .collect();
+    let sign_changes: Vec<f64> = signs.windows(2).map(|w| w[1] - w[0]).collect();
+
+    let mut matches = Vec::new();
+    for i in 1..speeds.len().saturating_sub(1) {
+        if sign_changes.get(i - 1).copied().unwrap_or(0.0) != 0.0 {
+            matches.push((jds[i], speeds[i]));
+        }
+    }
+    if matches.is_empty() {
+        None
+    } else {
+        Some(matches)
+    }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Rise/set wrapper around the raw libswisseph-sys binding, since the high-level
+// crate doesn't expose `swe_rise_trans`.
+// ------------------------------------------------------------------------------------------------
+
+fn rise_trans(jd_ut: f64, ipl: i32, observer: &LatLong, rsmi: i32) -> f64 {
+    let mut tret = [0.0_f64; 10];
+    let mut serr = [0_i8; 256];
+    let mut geopos = [observer.long, observer.lat, 0.0];
+    unsafe {
+        let _code = raw::swe_rise_trans(
+            jd_ut,
+            ipl,
+            std::ptr::null_mut(),
+            SEFLG_SWIEPH,
+            rsmi,
+            geopos.as_mut_ptr(),
+            0.0,
+            0.0,
+            tret.as_mut_ptr(),
+            serr.as_mut_ptr(),
+        );
+        if _code < 0 {
+            // Decode the error string for surfacing in panics.
+            let cstr = CStr::from_ptr(serr.as_ptr());
+            panic!("swe_rise_trans failed: {}", cstr.to_string_lossy());
+        }
+    }
+    tret[0]
+}
