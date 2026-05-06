@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use tokio::sync::RwLock;
 
 use axum::{
+    body::Body,
     extract::{Path as AxumPath, Query},
-    http::{HeaderValue, StatusCode},
+    http::{HeaderValue, Request, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::get,
     Router,
@@ -40,6 +46,7 @@ async fn main() {
         return;
     }
 
+    let cache = Arc::new(ResponseCache::new(Duration::from_secs(10)));
     let app = Router::new()
         .route("/v1/sun", get(sun_endpoint))
         .route("/v1/moon", get(moon_endpoint))
@@ -52,7 +59,9 @@ async fn main() {
         .route("/v1/events.ics", get(events_ics_endpoint))
         .route("/v1/return", get(return_endpoint))
         .route("/openapi.json", get(openapi_endpoint))
-        .route("/docs", get(docs_endpoint));
+        .route("/docs", get(docs_endpoint))
+        .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
+        .with_state(cache);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -178,6 +187,95 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+// ------------------------------------------------------------------------------------------------
+// Response cache — small in-memory TTL cache. Replaces Python's MWT(timeout=10).
+//
+// All endpoint responses are deterministic given the full URL (path + query),
+// so we key the cache on that. TTL defaults to 10s, matching the original
+// Python's per-endpoint memoize timeout.
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+struct CachedResponse {
+    body: Vec<u8>,
+    content_type: String,
+    expires_at: Instant,
+}
+
+struct ResponseCache {
+    inner: RwLock<HashMap<String, CachedResponse>>,
+    ttl: Duration,
+}
+
+impl ResponseCache {
+    fn new(ttl: Duration) -> Self {
+        Self { inner: RwLock::new(HashMap::new()), ttl }
+    }
+    async fn get(&self, key: &str) -> Option<CachedResponse> {
+        let g = self.inner.read().await;
+        match g.get(key) {
+            Some(c) if c.expires_at > Instant::now() => Some(c.clone()),
+            _ => None,
+        }
+    }
+    async fn set(&self, key: String, body: Vec<u8>, content_type: String) {
+        let mut g = self.inner.write().await;
+        // Opportunistic cleanup of expired entries when the map grows.
+        if g.len() > 256 {
+            let now = Instant::now();
+            g.retain(|_, v| v.expires_at > now);
+        }
+        g.insert(key, CachedResponse {
+            body,
+            content_type,
+            expires_at: Instant::now() + self.ttl,
+        });
+    }
+}
+
+async fn cache_middleware(
+    axum::extract::State(cache): axum::extract::State<Arc<ResponseCache>>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let key = format!(
+        "{}?{}",
+        req.uri().path(),
+        req.uri().query().unwrap_or("")
+    );
+    if let Some(cached) = cache.get(&key).await {
+        let mut resp = (StatusCode::OK, cached.body).into_response();
+        resp.headers_mut().insert(
+            "Content-Type",
+            HeaderValue::from_str(&cached.content_type).unwrap_or_else(|_|
+                HeaderValue::from_static("application/json")),
+        );
+        resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+        resp.headers_mut().insert("X-Cache", HeaderValue::from_static("HIT"));
+        return resp;
+    }
+    let resp = next.run(req).await;
+    let status = resp.status();
+    if status != StatusCode::OK {
+        return resp; // don't cache non-200
+    }
+    let content_type = resp
+        .headers()
+        .get("Content-Type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/json")
+        .to_string();
+    let (parts, body) = resp.into_parts();
+    let bytes = match axum::body::to_bytes(body, 16 * 1024 * 1024).await {
+        Ok(b) => b.to_vec(),
+        Err(_) => return Response::from_parts(parts, Body::from(Vec::<u8>::new())),
+    };
+    cache.set(key, bytes.clone(), content_type).await;
+    let mut resp = Response::from_parts(parts, Body::from(bytes));
+    resp.headers_mut().insert("X-Cache", HeaderValue::from_static("MISS"));
+    resp
 }
 
 async fn openapi_endpoint() -> Response {
