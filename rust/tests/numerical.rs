@@ -185,6 +185,96 @@ fn mercury_semisextile_sun_impossible() {
     assert!(m.0.next_angle_to_planet(&sun.0, 30.0, None, None, None, None, None).is_none());
 }
 
+// ------------------------------------------------------------------------------------------------
+// Methods that were `NotImplementedError` in Python.
+// ------------------------------------------------------------------------------------------------
+
+#[test]
+fn relative_orbital_velocity_sun_is_one() {
+    // Sun entry uses Earth's heliocentric period, so the relative
+    // velocity of "Sun = Earth's orbit" is 1 by construction.
+    let s = Sun::new();
+    assert_abs_diff_eq!(s.0.relative_orbital_velocity(), 1.0, epsilon = 1e-9);
+}
+
+#[test]
+fn relative_orbital_velocity_mercury_faster_than_earth() {
+    // Mercury's orbital velocity is ~47.4 km/s, Earth's ~29.78 km/s →
+    // ratio ≈ 1.59. The cube-root formula gives the same number.
+    let m = Mercury::new();
+    let v = m.0.relative_orbital_velocity();
+    assert!((1.59..1.61).contains(&v), "got {}", v);
+}
+
+#[test]
+fn relative_orbital_velocity_mars_slower_than_earth() {
+    use cerridwen::planets::Mars;
+    let m = Mars::new();
+    let v = m.0.relative_orbital_velocity();
+    assert!((0.80..0.82).contains(&v), "got {}", v);
+}
+
+#[test]
+fn lunation_number_today_is_in_expected_range() {
+    // Brown lunation 1 was Jan 1923. Lunations advance ~12.37 per year.
+    // Today (May 2026) we expect somewhere in the 1270s.
+    let m = Moon::new();
+    let n = m.lunation_number(None);
+    assert!((1270..=1290).contains(&n), "got {}", n);
+}
+
+#[test]
+fn lunation_number_at_brown_epoch() {
+    // Half a day after Brown's reference new moon (sweph: 2423436.6117);
+    // we need the new moon to be far enough into the search window for
+    // the local-minimum detector to register it.
+    let m = Moon::at_jd(2423437.2);
+    assert_eq!(m.lunation_number(None), 1);
+}
+
+#[test]
+fn lunation_number_one_synodic_month_later() {
+    // ~1 synodic month after Brown's epoch → lunation 2.
+    let m = Moon::at_jd(2423437.2 + 29.5);
+    assert_eq!(m.lunation_number(None), 2);
+}
+
+#[test]
+fn next_event_sun_is_an_ingress() {
+    // Sun has no rise/set without an observer, no rx, no moon-phase —
+    // only ingress remains, so next_event must return the Sun's next sign
+    // change wrapped as an ingress event.
+    let s = Sun::new();
+    let ev = s.0.next_event().expect("Sun always has a next ingress");
+    assert!(ev.description.contains("ingress"));
+    let nsc = s.0.next_sign_change(None);
+    assert!((ev.jd - nsc).abs() < 1e-9, "expected ev.jd ≈ next sign change");
+}
+
+#[test]
+fn next_event_moon_picks_earliest() {
+    // The Moon has a sign change every ~2.5 days and a new/full moon
+    // every ~14.7 days, so the earliest of {ingress, new_or_full} is the
+    // ingress most of the time. We just verify the function returns a
+    // candidate within the expected outer bound (next_new_or_full_moon).
+    let m = Moon::new();
+    let ev = m.0.next_event().expect("Moon always has a next event");
+    let n_or_f = m.next_new_or_full_moon(None);
+    assert!(ev.jd <= n_or_f.jd + 1e-9);
+}
+
+#[test]
+fn void_of_course_basic() {
+    // Pick a Moon JD where it is mid-sign and verify the function returns
+    // something coherent: VoC time must lie within (now, next_sign_change].
+    let jd = 2456867.0;
+    let m = Moon::at_jd(jd);
+    let nsc = m.0.next_sign_change(None);
+    let (_voc, until) = m.is_void_of_course(None);
+    assert!(until > jd && until <= nsc + 1e-6,
+            "until={} jd={} nsc={}", until, jd, nsc);
+}
+
 #[test]
 fn zero_jd() {
     // JD=0 falls in 4713 BC and exercises the BC ephemeris files

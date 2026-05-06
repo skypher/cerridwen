@@ -515,6 +515,79 @@ impl Planet {
             _ => 365.0 * 30.0,
         }
     }
+
+    /// Return the earliest forthcoming event for this body across the
+    /// generic event types: rise, set, sign-ingress, and retrograde
+    /// station. For the Moon, the next new/full moon is also considered.
+    /// Returns `None` only if every individual lookup fails.
+    ///
+    /// Aspect events between specific bodies aren't included here — they
+    /// require explicit partner choice; use `next_angle_to_planet`.
+    pub fn next_event(&self) -> Option<PlanetEvent> {
+        let mut candidates: Vec<PlanetEvent> = Vec::new();
+
+        if self.observer.is_some() {
+            candidates.push(self.next_rise());
+            candidates.push(self.next_set());
+        }
+
+        // Sign ingress.
+        let nsc = self.next_sign_change(None);
+        let next_sign = self.sign(Some(nsc));
+        candidates.push(PlanetEvent::new(
+            format!("{} ingress into {}", self.name(), next_sign),
+            nsc,
+        ));
+
+        // Retrograde station — Sun and Moon don't retrograde.
+        if self.id != SE_SUN && self.id != SE_MOON {
+            if let Some((rx_jd, kind)) = self.next_rx_event(None, None) {
+                let desc = if kind == "rx" {
+                    format!("{} stations retrograde", self.name())
+                } else {
+                    format!("{} stations direct", self.name())
+                };
+                candidates.push(PlanetEvent::new(desc, rx_jd));
+            }
+        }
+
+        // Moon-specific: next new/full moon.
+        if self.id == SE_MOON {
+            let moon = Moon(self.clone());
+            candidates.push(moon.next_new_or_full_moon(None));
+        }
+
+        candidates
+            .into_iter()
+            .min_by(|a, b| a.jd.partial_cmp(&b.jd).unwrap())
+    }
+
+    /// Mean orbital period (sidereal) in days. The Sun entry is Earth's
+    /// heliocentric orbit; the Moon entry is its sidereal lunar month.
+    /// Values from IERS / IAU constants.
+    pub fn mean_orbital_period(&self) -> f64 {
+        match self.id {
+            SE_SUN => 365.256363004,        // Earth around Sun
+            SE_MOON => 27.32166155,         // Moon around Earth (sidereal)
+            SE_MERCURY => 87.9691,
+            SE_VENUS => 224.701,
+            SE_MARS => 686.971,
+            SE_JUPITER => 4332.59,
+            SE_SATURN => 10759.22,
+            SE_URANUS => 30688.5,
+            SE_NEPTUNE => 60182.0,
+            SE_PLUTO => 90560.0,
+            _ => f64::NAN,
+        }
+    }
+
+    /// Mean orbital velocity relative to Earth's heliocentric velocity.
+    /// Derived from Kepler's third law: v ∝ T^(-1/3), so the ratio is
+    /// `(T_earth / T_body)^(1/3)`. Earth itself returns 1.0.
+    pub fn relative_orbital_velocity(&self) -> f64 {
+        const EARTH_PERIOD_DAYS: f64 = 365.256363004;
+        (EARTH_PERIOD_DAYS / self.mean_orbital_period()).cbrt()
+    }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -673,7 +746,6 @@ impl Sun {
         }
     }
     pub fn average_motion_per_year(&self) -> f64 { 360.0 }
-    pub fn mean_orbital_period(&self) -> f64 { 365.256363004 }
 }
 
 impl Moon {
@@ -686,8 +758,6 @@ impl Moon {
             _ => None,
         }
     }
-    pub fn mean_orbital_period(&self) -> f64 { 27.32166155 }
-
     pub fn speed_ratio(&self, jd: Option<f64>) -> f64 {
         (self.0.speed(jd) - 11.76) / 3.57
     }
@@ -789,6 +859,69 @@ impl Moon {
         let full = self.last_full_moon(jd);
         if new.jd > full.jd { new } else { full }
     }
+
+    /// Returns `(is_voc, until_jd)`: whether the Moon is void-of-course at
+    /// `jd`, and the JD at which the answer changes.
+    ///
+    /// VoC is determined by searching for any major aspect (conjunction,
+    /// sextile, square, trine, opposition — both dexter and sinister) the
+    /// Moon will form to a traditional planet (Sun, Mercury, Venus, Mars,
+    /// Jupiter, Saturn) or modern outer (Uranus, Neptune, Pluto) before
+    /// its next sign change.
+    ///
+    /// If at least one such aspect is upcoming, the answer is
+    /// `(false, last_aspect_jd)` — VoC will *commence* at the latest
+    /// aspect time. If no aspect is upcoming, `(true, next_sign_change_jd)`.
+    pub fn is_void_of_course(&self, jd: Option<f64>) -> (bool, f64) {
+        let jd = jd.unwrap_or(self.0.jd);
+        let nsc = self.0.next_sign_change(Some(jd));
+
+        let partner_ids = [
+            SE_SUN, SE_MERCURY, SE_VENUS, SE_MARS, SE_JUPITER, SE_SATURN,
+            SE_URANUS, SE_NEPTUNE, SE_PLUTO,
+        ];
+        // Major aspects, including sinister mirrors of 60/90/120.
+        let major_angles = [0.0, 60.0, 90.0, 120.0, 180.0, 240.0, 270.0, 300.0];
+
+        let mut latest_aspect_jd: Option<f64> = None;
+
+        for partner_id in partner_ids {
+            let partner = Planet::new(partner_id, Some(jd), None);
+            for &angle in &major_angles {
+                let aspects = self.0.angles_to_planet_within_period(
+                    &partner, angle, jd, nsc, None, None, None,
+                );
+                for (a_jd, _) in aspects {
+                    if a_jd > jd && a_jd < nsc {
+                        latest_aspect_jd = match latest_aspect_jd {
+                            Some(x) if x >= a_jd => Some(x),
+                            _ => Some(a_jd),
+                        };
+                    }
+                }
+            }
+        }
+
+        match latest_aspect_jd {
+            Some(t) => (false, t),
+            None => (true, nsc),
+        }
+    }
+
+    /// Brown lunation number. Lunation 1 begins at the first new moon of
+    /// January 1923; the bundled Swiss Ephemeris computes that new moon
+    /// at JD 2423436.6117 (1923-01-17 02:40 UTC). Snapping to
+    /// `last_new_moon` and dividing by the mean synodic month gives the
+    /// lunation index; `round()` absorbs the drift between mean and true
+    /// synodic month accumulated across the run-up.
+    pub fn lunation_number(&self, jd: Option<f64>) -> i64 {
+        const BROWN_REF_JD: f64 = 2423436.611689;
+        const SYNODIC_MONTH_DAYS: f64 = 29.530588853;
+        let jd = jd.unwrap_or(self.0.jd);
+        let last_new_moon_jd = self.last_new_moon(Some(jd)).jd;
+        let n = (last_new_moon_jd - BROWN_REF_JD) / SYNODIC_MONTH_DAYS;
+        n.round() as i64 + 1
+    }
 }
 
 impl Mercury {
@@ -801,7 +934,6 @@ impl Mercury {
             _ => None,
         }
     }
-    pub fn mean_orbital_period(&self) -> f64 { 87.9691 }
 }
 
 impl Venus {
