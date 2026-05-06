@@ -114,12 +114,17 @@ pub struct Ascendant {
     pub jd: f64,
     pub long: f64,
     pub lat: f64,
+    pub house_system: u8,
 }
 
 impl Ascendant {
     pub fn new(long: f64, lat: f64, jd: Option<f64>) -> Self {
+        Self::with_house_system(long, lat, jd, b'P')
+    }
+
+    pub fn with_house_system(long: f64, lat: f64, jd: Option<f64>, hsys: u8) -> Self {
         init_swe();
-        Self { jd: jd.unwrap_or_else(jd_now), long, lat }
+        Self { jd: jd.unwrap_or_else(jd_now), long, lat, house_system: hsys }
     }
 
     pub fn name(&self) -> &'static str {
@@ -128,7 +133,7 @@ impl Ascendant {
 
     pub fn longitude(&self, jd: Option<f64>) -> f64 {
         let jd = jd.unwrap_or(self.jd);
-        let (_cusps, ascmc) = swe::houses(jd, self.lat, self.long, b'P' as i32);
+        let (_cusps, ascmc) = swe::houses(jd, self.lat, self.long, self.house_system as i32);
         ascmc[0]
     }
 
@@ -138,6 +143,105 @@ impl Ascendant {
 
     pub fn sign(&self, jd: Option<f64>) -> &'static str {
         self.position(jd).sign()
+    }
+}
+
+/// Full house-system result. Cusps are 1-indexed in the API, so element
+/// `cusps[i]` holds house i+1's cusp longitude (i in 0..12).
+#[derive(Clone, Debug)]
+pub struct Houses {
+    pub system_code: char,
+    pub system_name: String,
+    pub cusps: [f64; 12],
+    pub ascendant: f64,
+    pub mc: f64,
+    pub armc: f64,
+    pub vertex: f64,
+    pub equatorial_ascendant: f64,
+    pub co_ascendant_koch: f64,
+    pub co_ascendant_munkasey: f64,
+    pub polar_ascendant: f64,
+}
+
+/// Compute houses for a given moment and observer using a SwissEph
+/// house-system letter code. See `valid_house_systems()` for the list.
+pub fn compute_houses(jd: f64, lat: f64, long: f64, system: char) -> Houses {
+    init_swe();
+    let code = system as i32;
+    let (cusps_raw, ascmc) = swe::houses(jd, lat, long, code);
+    let mut cusps = [0.0_f64; 12];
+    for i in 0..12 {
+        cusps[i] = cusps_raw[i + 1];
+    }
+    Houses {
+        system_code: system,
+        system_name: swe::house_name(code),
+        cusps,
+        ascendant: ascmc[0],
+        mc: ascmc[1],
+        armc: ascmc[2],
+        vertex: ascmc[3],
+        equatorial_ascendant: ascmc[4],
+        co_ascendant_koch: ascmc[5],
+        co_ascendant_munkasey: ascmc[6],
+        polar_ascendant: ascmc[7],
+    }
+}
+
+/// Letter codes for the house systems we accept. Mirrors SwissEph; case
+/// is normalised to upper.
+pub fn valid_house_systems() -> &'static [(char, &'static str)] {
+    &[
+        ('P', "Placidus"),
+        ('K', "Koch"),
+        ('O', "Porphyry"),
+        ('R', "Regiomontanus"),
+        ('C', "Campanus"),
+        ('A', "Equal (Asc)"),
+        ('E', "Equal (alt)"),
+        ('V', "Vehlow equal"),
+        ('W', "Whole sign"),
+        ('X', "Meridian / axial rotation"),
+        ('M', "Morinus"),
+        ('H', "Horizon / azimuth"),
+        ('T', "Polich/Page (topocentric)"),
+        ('B', "Alcabitius"),
+        ('U', "Krusinski-Pisa-Goelzer"),
+        ('Y', "APC"),
+        ('N', "Equal MC"),
+        ('D', "Equal (MC)"),
+    ]
+}
+
+/// Return the canonical house-system letter for an input string, or `None`
+/// if not recognised. Accepts a single ASCII letter (any case) or a
+/// recognised name like "placidus", "whole_sign", "koch".
+pub fn parse_house_system(s: &str) -> Option<char> {
+    let trimmed = s.trim();
+    if trimmed.len() == 1 {
+        let c = trimmed.chars().next().unwrap().to_ascii_uppercase();
+        if valid_house_systems().iter().any(|(k, _)| *k == c) {
+            return Some(c);
+        }
+    }
+    match trimmed.to_ascii_lowercase().replace([' ', '-'], "_").as_str() {
+        "placidus" => Some('P'),
+        "koch" => Some('K'),
+        "porphyry" => Some('O'),
+        "regiomontanus" => Some('R'),
+        "campanus" => Some('C'),
+        "equal" | "equal_asc" => Some('A'),
+        "vehlow" | "vehlow_equal" => Some('V'),
+        "whole_sign" | "whole" | "whole_signs" => Some('W'),
+        "meridian" | "axial" | "axial_rotation" => Some('X'),
+        "morinus" => Some('M'),
+        "horizon" | "azimuth" | "azimut" => Some('H'),
+        "topocentric" | "polich" | "polich_page" => Some('T'),
+        "alcabitius" => Some('B'),
+        "krusinski" | "krusinski_pisa_goelzer" => Some('U'),
+        "apc" => Some('Y'),
+        "equal_mc" => Some('N'),
+        _ => None,
     }
 }
 

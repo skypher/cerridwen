@@ -11,9 +11,9 @@ use axum::{
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    compute_moon_data_with, compute_sun_data, jd2iso, jd_now, parse_jd_or_iso_date, ASPECTS,
-    LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
-    VoidOfCourseData,
+    compute_houses, compute_moon_data_with, compute_sun_data, jd2iso, jd_now, parse_house_system,
+    parse_jd_or_iso_date, valid_house_systems, ASPECTS, Houses, LatLong, MoonData, MoonOptions,
+    MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -43,7 +43,8 @@ async fn main() {
         .route("/v1/moon", get(moon_endpoint))
         .route("/v1/olivier", get(olivier_endpoint))
         .route("/v1/events", get(events_endpoint))
-        .route("/v1/body/:name", get(body_endpoint));
+        .route("/v1/body/:name", get(body_endpoint))
+        .route("/v1/houses", get(houses_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -120,15 +121,78 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     if let Some(ll) = latlong {
-        let (cusps, _ascmc) = swisseph::swe::houses(jd, ll.lat, ll.long, b'P' as i32);
-        // SwissEph returns cusps[0] unused, cusps[1..=12] = houses 1-12. The
-        // Python wrapper (pyswisseph) re-indexes to a 12-tuple of houses, so
-        // we slice [1..13] to match.
-        let cusps_rad: Vec<f64> = cusps[1..13].iter().map(|c| c.to_radians()).collect();
+        let system = match q.get("house_system") {
+            Some(s) => match parse_house_system(s) {
+                Some(c) => c,
+                None => return bad_request(&format!("unknown house_system: {}", s)),
+            },
+            None => 'P',
+        };
+        let h = compute_houses(jd, ll.lat, ll.long, system);
+        let cusps_rad: Vec<f64> = h.cusps.iter().map(|c| c.to_radians()).collect();
         result.insert("houses".into(), json!(cusps_rad));
+        result.insert("house_system".into(), json!(h.system_code.to_string()));
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn houses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("Specify both latitude and longitude"),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+
+    // Default to Placidus when not specified.
+    let system = match q.get("house_system") {
+        Some(s) => match parse_house_system(s) {
+            Some(c) => c,
+            None => {
+                let known: Vec<String> = valid_house_systems()
+                    .iter()
+                    .map(|(c, name)| format!("{}={}", c, name))
+                    .collect();
+                return bad_request(&format!(
+                    "unknown house_system: {}. Known systems: {}",
+                    s,
+                    known.join(", ")
+                ));
+            }
+        },
+        None => 'P',
+    };
+
+    let houses = compute_houses(jd, observer.lat, observer.long, system);
+    json_ok(houses_to_json(&houses, jd))
+}
+
+fn houses_to_json(h: &Houses, jd: f64) -> Value {
+    let cusps: Vec<Value> = h.cusps.iter()
+        .map(|&deg| json!({
+            "absolute_degrees": deg,
+            "sign": cerridwen::PlanetLongitude::new(deg).sign(),
+        }))
+        .collect();
+    json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "system_code": h.system_code.to_string(),
+        "system_name": h.system_name,
+        "cusps": cusps,
+        "ascendant": h.ascendant,
+        "mc": h.mc,
+        "armc": h.armc,
+        "vertex": h.vertex,
+        "equatorial_ascendant": h.equatorial_ascendant,
+        "co_ascendant_koch": h.co_ascendant_koch,
+        "co_ascendant_munkasey": h.co_ascendant_munkasey,
+        "polar_ascendant": h.polar_ascendant,
+    })
 }
 
 async fn body_endpoint(
