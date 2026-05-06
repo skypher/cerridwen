@@ -11,10 +11,10 @@ use axum::{
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    compute_houses, compute_moon_data_with, compute_sun_data, eclipses_within_period, jd2iso,
-    jd_now, parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems, ASPECTS,
-    Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude,
-    SunData, VoidOfCourseData,
+    apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
+    eclipses_within_period, jd2iso, jd_now, parse_ayanamsha, parse_house_system,
+    parse_jd_or_iso_date_in_tz, valid_house_systems, ASPECTS, Eclipse, Houses, LatLong, MoonData,
+    MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -35,7 +35,7 @@ async fn main() {
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
         let data = compute_moon_data_with(None, Some(observer), MoonOptions::default());
-        println!("{}", serde_json::to_string_pretty(&moon_data_to_json(&data)).unwrap());
+        println!("{}", serde_json::to_string_pretty(&moon_data_to_json(&data, 0.0, "tropical")).unwrap());
         return;
     }
 
@@ -59,25 +59,60 @@ async fn main() {
 // ------------------------------------------------------------------------------------------------
 
 async fn sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
-    match parse_observer_and_jd(&q) {
-        Ok((jd, latlong)) => {
-            let data = compute_sun_data(jd, latlong);
-            json_ok(sun_data_to_json(&data))
-        }
-        Err(e) => bad_request(&e),
-    }
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let data = compute_sun_data(jd_opt, latlong);
+    let (ayan, ayan_name) = match parse_zodiac(&q, data.jd) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    json_ok(sun_data_to_json(&data, ayan, ayan_name))
 }
 
 async fn moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
-    match parse_observer_and_jd(&q) {
-        Ok((jd, latlong)) => {
-            let opts = MoonOptions {
-                voc_traditional_only: parse_bool(q.get("voc_traditional_only")),
-            };
-            let data = compute_moon_data_with(jd, latlong, opts);
-            json_ok(moon_data_to_json(&data))
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let opts = MoonOptions {
+        voc_traditional_only: parse_bool(q.get("voc_traditional_only")),
+    };
+    let data = compute_moon_data_with(jd_opt, latlong, opts);
+    let (ayan, ayan_name) = match parse_zodiac(&q, data.jd) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    json_ok(moon_data_to_json(&data, ayan, ayan_name))
+}
+
+/// Resolves the zodiac/ayanamsha query params for a given JD.
+/// Returns Ok((ayanamsha_deg, ayanamsha_name)) — ayanamsha_deg is 0.0 in
+/// tropical mode and `name` is "tropical".
+fn parse_zodiac(
+    q: &HashMap<String, String>,
+    jd: f64,
+) -> Result<(f64, &'static str), String> {
+    let zodiac = q.get("zodiac").map(|s| s.to_ascii_lowercase());
+    match zodiac.as_deref() {
+        None | Some("tropical") => Ok((0.0, "tropical")),
+        Some("sidereal") => {
+            let name = q.get("ayanamsha").map(|s| s.as_str()).unwrap_or("lahiri");
+            let (mode, label) = parse_ayanamsha(name)
+                .ok_or_else(|| format!("unknown ayanamsha: {}", name))?;
+            let deg = compute_ayanamsha(jd, mode);
+            Ok((deg, label))
         }
-        Err(e) => bad_request(&e),
+        Some(other) => Err(format!("zodiac must be tropical or sidereal, got: {}", other)),
+    }
+}
+
+fn shift_longitude(p: &PlanetLongitude, ayanamsha_deg: f64) -> PlanetLongitude {
+    if ayanamsha_deg == 0.0 {
+        *p
+    } else {
+        PlanetLongitude::new(apply_ayanamsha(p.absolute_degrees, ayanamsha_deg))
     }
 }
 
@@ -280,12 +315,25 @@ async fn body_endpoint(
         None => return not_found(&format!("unknown body: {}", name)),
     };
 
+    let (ayan, ayan_name) = match parse_zodiac(&q, jd) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+
+    let trop_lon = planet.longitude_at(jd);
+    let lon = if ayan != 0.0 { apply_ayanamsha(trop_lon, ayan) } else { trop_lon };
+    let pos = PlanetLongitude::new(lon);
+
     let mut o = serde_json::Map::new();
     o.insert("jd".into(), json!(jd));
     o.insert("iso_date".into(), json!(jd2iso(jd)));
+    o.insert("zodiac".into(), json!(ayan_name));
+    if ayan != 0.0 {
+        o.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
     o.insert("name".into(), json!(planet.name()));
-    o.insert("position".into(), planet_longitude_to_json(&planet.position(None)));
-    o.insert("longitude".into(), json!(planet.longitude_at(jd)));
+    o.insert("position".into(), planet_longitude_to_json(&pos));
+    o.insert("longitude".into(), json!(lon));
     o.insert("latitude".into(), json!(planet.latitude(None)));
     o.insert("distance".into(), json!(planet.distance(None)));
     o.insert("speed".into(), json!(planet.speed(None)));
@@ -525,11 +573,16 @@ fn moon_phase_to_json(p: &MoonPhaseData) -> Value {
     })
 }
 
-fn sun_data_to_json(d: &SunData) -> Value {
+fn sun_data_to_json(d: &SunData, ayan: f64, ayan_name: &str) -> Value {
     let mut o = serde_json::Map::new();
     o.insert("jd".into(), json!(d.jd));
     o.insert("iso_date".into(), json!(d.iso_date));
-    o.insert("position".into(), planet_longitude_to_json(&d.position));
+    o.insert("zodiac".into(), json!(ayan_name));
+    if ayan != 0.0 {
+        o.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
+    let pos = shift_longitude(&d.position, ayan);
+    o.insert("position".into(), planet_longitude_to_json(&pos));
     o.insert("dignity".into(), json!(d.dignity));
     o.insert("mean_orbital_period".into(), json!(d.mean_orbital_period));
     o.insert(
@@ -553,11 +606,16 @@ fn void_of_course_to_json(v: &VoidOfCourseData) -> Value {
     })
 }
 
-fn moon_data_to_json(d: &MoonData) -> Value {
+fn moon_data_to_json(d: &MoonData, ayan: f64, ayan_name: &str) -> Value {
     let mut o = serde_json::Map::new();
     o.insert("jd".into(), json!(d.jd));
     o.insert("iso_date".into(), json!(d.iso_date));
-    o.insert("position".into(), planet_longitude_to_json(&d.position));
+    o.insert("zodiac".into(), json!(ayan_name));
+    if ayan != 0.0 {
+        o.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
+    let pos = shift_longitude(&d.position, ayan);
+    o.insert("position".into(), planet_longitude_to_json(&pos));
     o.insert("phase".into(), moon_phase_to_json(&d.phase));
     o.insert("illumination".into(), json!(d.illumination));
     o.insert("distance".into(), json!(d.distance));

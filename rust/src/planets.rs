@@ -1273,6 +1273,43 @@ fn find_zero_crossings<E: FnMut(f64) -> f64 + ?Sized>(
 }
 
 // ------------------------------------------------------------------------------------------------
+// Sidereal zodiac / ayanamshas
+// ------------------------------------------------------------------------------------------------
+
+/// Parse an ayanamsha identifier into the SwissEph SE_SIDM_* mode integer.
+pub fn parse_ayanamsha(s: &str) -> Option<(i32, &'static str)> {
+    match s.to_ascii_lowercase().replace([' ', '-'], "_").as_str() {
+        "fagan" | "fagan_bradley" => Some((0, "Fagan-Bradley")),
+        "lahiri" => Some((1, "Lahiri")),
+        "deluce" => Some((2, "DeLuce")),
+        "raman" => Some((3, "Raman")),
+        "ushashashi" => Some((4, "Ushashashi")),
+        "krishnamurti" => Some((5, "Krishnamurti")),
+        "djwhal_khul" => Some((6, "Djwhal Khul")),
+        "yukteshwar" => Some((7, "Yukteshwar")),
+        "jn_bhasin" => Some((8, "J.N. Bhasin")),
+        "j2000" => Some((18, "J2000")),
+        "galcent" | "galactic_center" => Some((17, "Galactic Center 0° Sag")),
+        _ => None,
+    }
+}
+
+/// Compute the ayanamsha (in degrees) for the given UT JD and SE_SIDM_* mode.
+pub fn compute_ayanamsha(jd_ut: f64, mode: i32) -> f64 {
+    init_swe();
+    unsafe {
+        raw::swe_set_sid_mode(mode, 0.0, 0.0);
+        raw::swe_get_ayanamsa_ut(jd_ut)
+    }
+}
+
+/// Project a tropical longitude into the sidereal frame given an ayanamsha
+/// in degrees.
+pub fn apply_ayanamsha(tropical_lon: f64, ayanamsha_deg: f64) -> f64 {
+    (tropical_lon - ayanamsha_deg).rem_euclid(360.0)
+}
+
+// ------------------------------------------------------------------------------------------------
 // Eclipses
 // ------------------------------------------------------------------------------------------------
 

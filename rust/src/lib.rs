@@ -20,10 +20,11 @@ pub mod utils;
 
 pub use crate::defs::{Aspect, ASPECTS, SIGNS, SIGN_RELATED_ASPECTS, TRADITIONAL_MAJOR_ASPECTS};
 pub use crate::planets::{
-    compute_houses, eclipses_within_period, next_eclipse, parse_house_system, valid_house_systems,
-    Ascendant, Body, Ceres, Chiron, Eclipse, EclipseKind, EclipseSearch, FixedZodiacPoint, Houses,
-    Jupiter, Juno, Lilith, Mars, MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet,
-    PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,
+    apply_ayanamsha, compute_ayanamsha, compute_houses, eclipses_within_period, next_eclipse,
+    parse_ayanamsha, parse_house_system, valid_house_systems, Ascendant, Body, Ceres, Chiron,
+    Eclipse, EclipseKind, EclipseSearch, FixedZodiacPoint, Houses, Jupiter, Juno, Lilith, Mars,
+    MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet, PlanetEvent, PlanetLongitude,
+    Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,
 };
 pub use crate::utils::{
     angle_to_aspect_name, aspect_name_to_angle, days_frac_to_dhms, iso2jd, jd2iso, jd_now,
