@@ -12,9 +12,10 @@ use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    eclipses_within_period, jd2iso, jd_now, parse_ayanamsha, parse_house_system,
-    parse_jd_or_iso_date_in_tz, valid_house_systems, ASPECTS, Eclipse, Houses, LatLong, MoonData,
-    MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
+    compute_transits, default_transit_bodies, eclipses_within_period, jd2iso, jd_now,
+    parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems,
+    ActiveTransit, ASPECTS, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData,
+    PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -46,7 +47,8 @@ async fn main() {
         .route("/v1/events", get(events_endpoint))
         .route("/v1/body/:name", get(body_endpoint))
         .route("/v1/houses", get(houses_endpoint))
-        .route("/v1/eclipses", get(eclipses_endpoint));
+        .route("/v1/eclipses", get(eclipses_endpoint))
+        .route("/v1/transits", get(transits_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -172,6 +174,54 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let natal_jd = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let transit_jd = match q.get("transit_jd").or(q.get("transit_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let orb: f64 = match q.get("orb") {
+        Some(s) => match s.parse::<f64>() {
+            Ok(v) if v > 0.0 && v < 30.0 => v,
+            _ => return bad_request("orb must be in (0, 30) degrees"),
+        },
+        None => 1.5,
+    };
+    let bodies = default_transit_bodies();
+    let active = compute_transits(natal_jd, transit_jd, &bodies, orb);
+    let arr: Vec<Value> = active.iter().map(transit_to_json).collect();
+    let mut o = serde_json::Map::new();
+    o.insert("natal_jd".into(), json!(natal_jd));
+    o.insert("natal_iso".into(), json!(jd2iso(natal_jd)));
+    o.insert("transit_jd".into(), json!(transit_jd));
+    o.insert("transit_iso".into(), json!(jd2iso(transit_jd)));
+    o.insert("orb".into(), json!(orb));
+    o.insert("active".into(), json!(arr));
+    json_ok(Value::Object(o))
+}
+
+fn transit_to_json(t: &ActiveTransit) -> Value {
+    json!({
+        "transit_body": t.transit_body,
+        "natal_body": t.natal_body,
+        "aspect": t.aspect_name,
+        "mode": t.aspect_mode,
+        "exact_angle": t.exact_angle,
+        "orb_distance": t.orb_distance,
+        "applying": t.applying,
+    })
 }
 
 async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {

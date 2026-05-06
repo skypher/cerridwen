@@ -20,8 +20,9 @@ pub mod utils;
 
 pub use crate::defs::{Aspect, ASPECTS, SIGNS, SIGN_RELATED_ASPECTS, TRADITIONAL_MAJOR_ASPECTS};
 pub use crate::planets::{
-    apply_ayanamsha, compute_ayanamsha, compute_houses, eclipses_within_period, next_eclipse,
-    parse_ayanamsha, parse_house_system, valid_house_systems, Ascendant, Body, Ceres, Chiron,
+    apply_ayanamsha, compute_ayanamsha, compute_houses, compute_transits,
+    default_transit_bodies, eclipses_within_period, next_eclipse, parse_ayanamsha,
+    parse_house_system, valid_house_systems, ActiveTransit, Ascendant, Body, Ceres, Chiron,
     Eclipse, EclipseKind, EclipseSearch, FixedZodiacPoint, Houses, Jupiter, Juno, Lilith, Mars,
     MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet, PlanetEvent, PlanetLongitude,
     Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,

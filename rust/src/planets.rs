@@ -1273,6 +1273,104 @@ fn find_zero_crossings<E: FnMut(f64) -> f64 + ?Sized>(
 }
 
 // ------------------------------------------------------------------------------------------------
+// Transits — given a natal chart, find which transiting bodies are currently
+// within orb of forming an aspect to the natal positions.
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct ActiveTransit {
+    pub transit_body: String,
+    pub natal_body: String,
+    pub aspect_name: &'static str,
+    pub aspect_mode: Option<&'static str>,
+    pub exact_angle: f64,
+    /// Difference between current angle and exact-aspect angle (degrees,
+    /// always >= 0).
+    pub orb_distance: f64,
+    /// Whether the aspect is applying (orb shrinking) at `transit_jd`.
+    pub applying: bool,
+}
+
+/// The 8 major aspects (incl. dexter+sinister mirrors of sextile/square/trine).
+fn major_aspects() -> &'static [(f64, &'static str, Option<&'static str>)] {
+    &[
+        (0.0, "conjunction", None),
+        (60.0, "sextile", Some("dexter")),
+        (90.0, "square", Some("dexter")),
+        (120.0, "trine", Some("dexter")),
+        (180.0, "opposition", None),
+        (240.0, "trine", Some("sinister")),
+        (270.0, "square", Some("sinister")),
+        (300.0, "sextile", Some("sinister")),
+    ]
+}
+
+/// All bodies we typically transit-aspect against. Caller can override.
+pub fn default_transit_bodies() -> [i32; 10] {
+    [
+        SE_SUN, SE_MOON, SE_MERCURY, SE_VENUS, SE_MARS,
+        SE_JUPITER, SE_SATURN, SE_URANUS, SE_NEPTUNE, SE_PLUTO,
+    ]
+}
+
+/// Compute active transits at `transit_jd` against natal positions at
+/// `natal_jd`. Aspects within `orb` degrees of exact are reported.
+/// `bodies` lists the SE_* IDs to consider on both sides — they intersect.
+pub fn compute_transits(
+    natal_jd: f64,
+    transit_jd: f64,
+    bodies: &[i32],
+    orb: f64,
+) -> Vec<ActiveTransit> {
+    init_swe();
+    // Pre-compute natal longitudes once.
+    let natal_lon: Vec<f64> = bodies.iter()
+        .map(|&id| swe::calc_ut(natal_jd, id as u32, SEFLG_SWIEPH as u32)
+            .map(|r| r.out[0]).unwrap_or(f64::NAN))
+        .collect();
+
+    let mut out = Vec::new();
+    let aspects = major_aspects();
+    let dt = 1.0 / 24.0; // 1 hour for applying/separating discrimination
+
+    for &t_id in bodies {
+        let t_lon = match swe::calc_ut(transit_jd, t_id as u32, SEFLG_SWIEPH as u32) {
+            Ok(r) => r.out[0],
+            Err(_) => continue,
+        };
+        let t_lon_next = match swe::calc_ut(transit_jd + dt, t_id as u32, SEFLG_SWIEPH as u32) {
+            Ok(r) => r.out[0],
+            Err(_) => t_lon,
+        };
+        for (i, &n_id) in bodies.iter().enumerate() {
+            if n_id == t_id { continue; }
+            let n_lon = natal_lon[i];
+            let angle = (t_lon - n_lon).rem_euclid(360.0);
+            let angle_next = (t_lon_next - n_lon).rem_euclid(360.0);
+            for &(target, name, mode) in aspects {
+                let dist = mod360_distance(angle, target);
+                if dist <= orb {
+                    let dist_next = mod360_distance(angle_next, target);
+                    let applying = dist_next < dist;
+                    out.push(ActiveTransit {
+                        transit_body: swe::get_planet_name(t_id),
+                        natal_body: swe::get_planet_name(n_id),
+                        aspect_name: name,
+                        aspect_mode: mode,
+                        exact_angle: target,
+                        orb_distance: dist,
+                        applying,
+                    });
+                }
+            }
+        }
+    }
+    // Sort by orb_distance ascending — tightest aspects first.
+    out.sort_by(|a, b| a.orb_distance.partial_cmp(&b.orb_distance).unwrap());
+    out
+}
+
+// ------------------------------------------------------------------------------------------------
 // Sidereal zodiac / ayanamshas
 // ------------------------------------------------------------------------------------------------
 
