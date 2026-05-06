@@ -186,6 +186,8 @@ async fn body_endpoint(
 }
 
 fn canonical_body_name(s: &str) -> Option<&'static str> {
+    // Accept synonyms — "rahu"/"north_node" → mean node, "ketu"/"south_node"
+    // is rendered as the mean node opposite (handled at lookup time).
     match s.to_ascii_lowercase().as_str() {
         "sun" => Some("Sun"),
         "moon" => Some("Moon"),
@@ -197,6 +199,15 @@ fn canonical_body_name(s: &str) -> Option<&'static str> {
         "uranus" => Some("Uranus"),
         "neptune" => Some("Neptune"),
         "pluto" => Some("Pluto"),
+        "mean_node" | "north_node" | "rahu" | "node" => Some("Mean Node"),
+        "true_node" | "true_north_node" => Some("True Node"),
+        "lilith" | "black_moon_lilith" | "mean_apogee" | "mean_apog" => Some("Mean Apogee"),
+        "osc_apogee" | "true_lilith" | "osc_apog" => Some("Osc. Apogee"),
+        "chiron" => Some("Chiron"),
+        "ceres" => Some("Ceres"),
+        "pallas" => Some("Pallas"),
+        "juno" => Some("Juno"),
+        "vesta" => Some("Vesta"),
         _ => None,
     }
 }
@@ -317,6 +328,15 @@ fn body_for(name: &str, jd: f64) -> Option<Planet> {
         "Uranus" => SE_URANUS,
         "Neptune" => SE_NEPTUNE,
         "Pluto" => SE_PLUTO,
+        "Mean Node" => SE_MEAN_NODE,
+        "True Node" => SE_TRUE_NODE,
+        "Mean Apogee" => SE_MEAN_APOG,
+        "Osc. Apogee" => SE_OSCU_APOG,
+        "Chiron" => SE_CHIRON,
+        "Ceres" => SE_CERES,
+        "Pallas" => SE_PALLAS,
+        "Juno" => SE_JUNO,
+        "Vesta" => SE_VESTA,
         _ => return None,
     };
     Some(Planet::new(id, Some(jd), None))

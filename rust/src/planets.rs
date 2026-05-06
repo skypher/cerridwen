@@ -14,7 +14,7 @@ const SEFLG_SPEED: i32 = 256;
 const SEFLG_EQUATORIAL: i32 = 2 * 1024;
 const SE_CALC_RISE: i32 = 1;
 const SE_CALC_SET: i32 = 2;
-// Body IDs.
+// Body IDs (mirroring swephexp.h).
 pub const SE_SUN: i32 = 0;
 pub const SE_MOON: i32 = 1;
 pub const SE_MERCURY: i32 = 2;
@@ -25,6 +25,15 @@ pub const SE_SATURN: i32 = 6;
 pub const SE_URANUS: i32 = 7;
 pub const SE_NEPTUNE: i32 = 8;
 pub const SE_PLUTO: i32 = 9;
+pub const SE_MEAN_NODE: i32 = 10;
+pub const SE_TRUE_NODE: i32 = 11;
+pub const SE_MEAN_APOG: i32 = 12;   // Black Moon Lilith (mean)
+pub const SE_OSCU_APOG: i32 = 13;   // Black Moon Lilith (osculating)
+pub const SE_CHIRON: i32 = 15;
+pub const SE_CERES: i32 = 17;
+pub const SE_PALLAS: i32 = 18;
+pub const SE_JUNO: i32 = 19;
+pub const SE_VESTA: i32 = 20;
 
 // ------------------------------------------------------------------------------------------------
 // PlanetEvent / PlanetLongitude / Ascendant / FixedZodiacPoint
@@ -444,12 +453,23 @@ impl Planet {
     }
 
     /// Returns (jd, "rx" | "direct").
+    /// Whether this body has retrograde stations in the meaningful sense.
+    /// The Sun and Moon never retrograde; the lunar mean node always
+    /// regresses (so no station); the mean lunar apogee similarly has no
+    /// rectifiable station.
+    pub fn has_rx_stations(&self) -> bool {
+        !matches!(
+            self.id,
+            SE_SUN | SE_MOON | SE_MEAN_NODE | SE_MEAN_APOG
+        )
+    }
+
     pub fn next_rx_event(
         &self,
         jd: Option<f64>,
         lookahead: Option<f64>,
     ) -> Option<(f64, &'static str)> {
-        assert!(self.id != SE_SUN && self.id != SE_MOON, "Sun/Moon do not retrograde");
+        assert!(self.has_rx_stations(), "{} does not retrograde", self.name());
         let jd = jd.unwrap_or(self.jd);
         let lookahead = lookahead.unwrap_or_else(|| self.aspect_lookahead());
         let (jd_start, jd_end) = if lookahead >= 0.0 {
@@ -478,7 +498,16 @@ impl Planet {
         let jd = jd.unwrap_or(self.jd);
         let cur_sign = self.sign(Some(jd));
         let cur_idx = SIGNS.iter().position(|s| *s == cur_sign).unwrap();
-        let next_idx = (cur_idx + 1) % 12;
+
+        // Direction-aware targeting: a retrograde-moving body crosses the
+        // *previous* sign boundary next. Mean-node-style perpetual
+        // retrogrades require this to terminate at all.
+        let going_retrograde = self.speed(Some(jd)) < 0.0;
+        let next_idx = if going_retrograde {
+            (cur_idx + 11) % 12
+        } else {
+            (cur_idx + 1) % 12
+        };
         let target = FixedZodiacPoint::new(next_idx as f64 * 30.0);
         let result = self.next_angle_to_planet(
             &target,
@@ -491,7 +520,12 @@ impl Planet {
         );
         let (event_jd, _, _) = result.expect("next_sign_change found nothing");
         // Nudge slightly past the boundary so callers don't see the previous sign.
-        event_jd + MAXIMUM_ERROR
+        // For retrograde motion the nudge goes the other way.
+        if going_retrograde {
+            event_jd - MAXIMUM_ERROR
+        } else {
+            event_jd + MAXIMUM_ERROR
+        }
     }
 
     pub fn time_left_in_sign(&self, jd: Option<f64>) -> f64 {
@@ -511,7 +545,13 @@ impl Planet {
             SE_MARS => 300.0,
             SE_JUPITER => 365.0 * 1.5,
             SE_SATURN => 365.0 * 3.5,
-            // Outer slow movers — generous but still bounded.
+            SE_URANUS => 365.0 * 8.0,
+            SE_NEPTUNE => 365.0 * 16.0,
+            SE_PLUTO => 365.0 * 25.0,
+            SE_MEAN_NODE | SE_TRUE_NODE => 365.0 * 2.0,
+            SE_MEAN_APOG | SE_OSCU_APOG => 365.0,
+            SE_CHIRON => 365.0 * 5.0,
+            SE_CERES | SE_PALLAS | SE_JUNO | SE_VESTA => 365.0,
             _ => 365.0 * 30.0,
         }
     }
@@ -539,8 +579,8 @@ impl Planet {
             nsc,
         ));
 
-        // Retrograde station — Sun and Moon don't retrograde.
-        if self.id != SE_SUN && self.id != SE_MOON {
+        // Retrograde station (where applicable).
+        if self.has_rx_stations() {
             if let Some((rx_jd, kind)) = self.next_rx_event(None, None) {
                 let desc = if kind == "rx" {
                     format!("{} stations retrograde", self.name())
@@ -577,6 +617,15 @@ impl Planet {
             SE_URANUS => 30688.5,
             SE_NEPTUNE => 60182.0,
             SE_PLUTO => 90560.0,
+            // Lunar node regression: 18.6 years.
+            SE_MEAN_NODE | SE_TRUE_NODE => 6798.38,
+            // Lunar apsidal precession: 8.85 years.
+            SE_MEAN_APOG | SE_OSCU_APOG => 3232.6,
+            SE_CHIRON => 18415.0,           // 50.42 yr
+            SE_CERES => 1681.6,             // 4.60 yr
+            SE_PALLAS => 1686.0,
+            SE_JUNO => 1592.0,
+            SE_VESTA => 1325.7,
             _ => f64::NAN,
         }
     }
@@ -653,6 +702,14 @@ body_wrapper!(Saturn, SE_SATURN);
 body_wrapper!(Uranus, SE_URANUS);
 body_wrapper!(Neptune, SE_NEPTUNE);
 body_wrapper!(Pluto, SE_PLUTO);
+body_wrapper!(MeanNode, SE_MEAN_NODE);
+body_wrapper!(TrueNode, SE_TRUE_NODE);
+body_wrapper!(Lilith, SE_MEAN_APOG);
+body_wrapper!(Chiron, SE_CHIRON);
+body_wrapper!(Ceres, SE_CERES);
+body_wrapper!(Pallas, SE_PALLAS);
+body_wrapper!(Juno, SE_JUNO);
+body_wrapper!(Vesta, SE_VESTA);
 
 // ---- Body trait implementations ----------------------------------------------------------------
 
@@ -660,7 +717,9 @@ impl Body for Planet {
     fn longitude(&self, jd: f64) -> f64 { self.longitude_at(jd) }
     fn name(&self) -> String { swe::get_planet_name(self.id) }
     fn max_speed(&self) -> f64 {
-        // Generic fallback; concrete wrappers below provide accurate per-body values.
+        // Approximate maxima used by the event-finder to size the sample
+        // grid. Real values vary; these are conservative-enough upper
+        // bounds that the search doesn't miss extrema.
         match self.id {
             SE_SUN => 1.0197676,
             SE_MOON => 15.3882655,
@@ -669,6 +728,17 @@ impl Body for Planet {
             SE_MARS => 0.7913920,
             SE_JUPITER => 0.2423810,
             SE_SATURN => 0.1308402,
+            SE_URANUS => 0.063,
+            SE_NEPTUNE => 0.040,
+            SE_PLUTO => 0.040,
+            // Mean lunar node moves ~0.053°/day retrograde; true node oscillates faster.
+            SE_MEAN_NODE => 0.053,
+            SE_TRUE_NODE => 0.6,
+            // Black Moon Lilith (mean apogee) ~0.111°/day.
+            SE_MEAN_APOG | SE_OSCU_APOG => 0.4,
+            // Asteroids — Ceres/Pallas/Juno/Vesta peak around 0.5°/day.
+            SE_CHIRON => 0.15,
+            SE_CERES | SE_PALLAS | SE_JUNO | SE_VESTA => 0.5,
             _ => 0.1,
         }
     }
@@ -681,6 +751,14 @@ impl Body for Planet {
             SE_MARS => 365.0 * 3.5,
             SE_JUPITER => 365.0 * 23.0,
             SE_SATURN => 365.0 * 30.0 + 365.0 * 40.0,
+            // Slow-moving outer points: roughly one full orbital period.
+            SE_URANUS => 365.0 * 84.0,
+            SE_NEPTUNE => 365.0 * 165.0,
+            SE_PLUTO => 365.0 * 248.0,
+            SE_MEAN_NODE | SE_TRUE_NODE => 365.0 * 19.0,
+            SE_MEAN_APOG | SE_OSCU_APOG => 365.0 * 9.0,
+            SE_CHIRON => 365.0 * 51.0,
+            SE_CERES | SE_PALLAS | SE_JUNO | SE_VESTA => 365.0 * 5.0,
             _ => 365.0 * 100.0,
         }
     }
