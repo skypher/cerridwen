@@ -11,9 +11,10 @@ use axum::{
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    compute_houses, compute_moon_data_with, compute_sun_data, jd2iso, jd_now, parse_house_system,
-    parse_jd_or_iso_date, valid_house_systems, ASPECTS, Houses, LatLong, MoonData, MoonOptions,
-    MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
+    compute_houses, compute_moon_data_with, compute_sun_data, eclipses_within_period, jd2iso,
+    jd_now, parse_house_system, parse_jd_or_iso_date, valid_house_systems, ASPECTS, Eclipse,
+    Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
+    VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -44,7 +45,8 @@ async fn main() {
         .route("/v1/olivier", get(olivier_endpoint))
         .route("/v1/events", get(events_endpoint))
         .route("/v1/body/:name", get(body_endpoint))
-        .route("/v1/houses", get(houses_endpoint));
+        .route("/v1/houses", get(houses_endpoint))
+        .route("/v1/eclipses", get(eclipses_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -135,6 +137,69 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let jd_start = match q.get("date_start") {
+        Some(s) => match parse_jd_or_iso_date(s) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+
+    let jd_end = if q.contains_key("lookahead") && q.contains_key("date_end") {
+        return bad_request("Must not specify date_end and lookahead both together");
+    } else if let Some(s) = q.get("date_end") {
+        match parse_jd_or_iso_date(s) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        }
+    } else if let Some(s) = q.get("lookahead") {
+        match s.parse::<f64>() {
+            Ok(n) if n >= 0.0 => jd_start + n,
+            Ok(_) => return bad_request("lookahead must be non-negative"),
+            Err(_) => return bad_request("lookahead must be a number"),
+        }
+    } else {
+        // Default: search a year forward — eclipses come in pairs every ~6 months.
+        jd_start + 365.0
+    };
+
+    let kind = q.get("type").map(|s| s.to_ascii_lowercase());
+    let (solar, lunar) = match kind.as_deref() {
+        None | Some("both") | Some("any") => (true, true),
+        Some("solar") => (true, false),
+        Some("lunar") => (false, true),
+        Some(other) => return bad_request(
+            &format!("type must be one of: solar, lunar, both. Got: {}", other)
+        ),
+    };
+
+    let limit: usize = match q.get("limit") {
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) => n,
+            Err(_) => return bad_request("limit must be a non-negative integer"),
+        },
+        None => 20,
+    };
+
+    let eclipses = eclipses_within_period(jd_start, jd_end, solar, lunar, limit);
+    let arr: Vec<Value> = eclipses.iter().map(eclipse_to_json).collect();
+    json_ok(Value::Array(arr))
+}
+
+fn eclipse_to_json(e: &Eclipse) -> Value {
+    json!({
+        "kind": e.kind.as_str(),
+        "central": e.central,
+        "max_jd": e.max_jd,
+        "max_iso": jd2iso(e.max_jd),
+        "first_contact_jd": e.first_contact_jd,
+        "first_contact_iso": e.first_contact_jd.map(jd2iso),
+        "last_contact_jd": e.last_contact_jd,
+        "last_contact_iso": e.last_contact_jd.map(jd2iso),
+    })
 }
 
 async fn houses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {

@@ -14,6 +14,15 @@ const SEFLG_SPEED: i32 = 256;
 const SEFLG_EQUATORIAL: i32 = 2 * 1024;
 const SE_CALC_RISE: i32 = 1;
 const SE_CALC_SET: i32 = 2;
+
+// Eclipse classification bits (from swephexp.h).
+const SE_ECL_CENTRAL: i32 = 1;
+const SE_ECL_NONCENTRAL: i32 = 2;
+const SE_ECL_TOTAL: i32 = 4;
+const SE_ECL_ANNULAR: i32 = 8;
+const SE_ECL_PARTIAL: i32 = 16;
+const SE_ECL_ANNULAR_TOTAL: i32 = 32;
+const SE_ECL_PENUMBRAL: i32 = 64;
 // Body IDs (mirroring swephexp.h).
 pub const SE_SUN: i32 = 0;
 pub const SE_MOON: i32 = 1;
@@ -1261,6 +1270,161 @@ fn find_zero_crossings<E: FnMut(f64) -> f64 + ?Sized>(
     } else {
         Some(matches)
     }
+}
+
+// ------------------------------------------------------------------------------------------------
+// Eclipses
+// ------------------------------------------------------------------------------------------------
+
+/// Eclipse kind. Solar eclipses can additionally be central/non-central; we
+/// fold the central bit into the kind label for serialization simplicity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EclipseKind {
+    SolarTotal,
+    SolarAnnular,
+    SolarHybrid,
+    SolarPartial,
+    LunarTotal,
+    LunarPartial,
+    LunarPenumbral,
+}
+
+impl EclipseKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            EclipseKind::SolarTotal => "solar_total",
+            EclipseKind::SolarAnnular => "solar_annular",
+            EclipseKind::SolarHybrid => "solar_hybrid",
+            EclipseKind::SolarPartial => "solar_partial",
+            EclipseKind::LunarTotal => "lunar_total",
+            EclipseKind::LunarPartial => "lunar_partial",
+            EclipseKind::LunarPenumbral => "lunar_penumbral",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Eclipse {
+    pub kind: EclipseKind,
+    pub central: bool,
+    /// JD of maximum eclipse.
+    pub max_jd: f64,
+    /// JD of first contact (penumbra/disc edge).
+    pub first_contact_jd: Option<f64>,
+    /// JD of last contact.
+    pub last_contact_jd: Option<f64>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EclipseSearch {
+    Solar,
+    Lunar,
+}
+
+/// Find the next solar or lunar eclipse from `jd_start`. `backward = true`
+/// searches into the past instead.
+pub fn next_eclipse(
+    jd_start: f64,
+    search: EclipseSearch,
+    backward: bool,
+) -> Option<Eclipse> {
+    init_swe();
+    let mut tret = [0.0_f64; 10];
+    let mut serr = [0_i8; 256];
+    let backward_flag: i32 = if backward { 1 } else { 0 };
+    let code = unsafe {
+        match search {
+            EclipseSearch::Solar => raw::swe_sol_eclipse_when_glob(
+                jd_start, SEFLG_SWIEPH, 0,
+                tret.as_mut_ptr(), backward_flag, serr.as_mut_ptr(),
+            ),
+            EclipseSearch::Lunar => raw::swe_lun_eclipse_when(
+                jd_start, SEFLG_SWIEPH, 0,
+                tret.as_mut_ptr(), backward_flag, serr.as_mut_ptr(),
+            ),
+        }
+    };
+    if code < 0 {
+        return None;
+    }
+    let central = (code & SE_ECL_CENTRAL) != 0
+        && (code & SE_ECL_NONCENTRAL) == 0;
+    let kind = match search {
+        EclipseSearch::Solar => {
+            if (code & SE_ECL_ANNULAR_TOTAL) != 0 {
+                EclipseKind::SolarHybrid
+            } else if (code & SE_ECL_TOTAL) != 0 {
+                EclipseKind::SolarTotal
+            } else if (code & SE_ECL_ANNULAR) != 0 {
+                EclipseKind::SolarAnnular
+            } else if (code & SE_ECL_PARTIAL) != 0 {
+                EclipseKind::SolarPartial
+            } else {
+                return None;
+            }
+        }
+        EclipseSearch::Lunar => {
+            if (code & SE_ECL_TOTAL) != 0 {
+                EclipseKind::LunarTotal
+            } else if (code & SE_ECL_PARTIAL) != 0 {
+                EclipseKind::LunarPartial
+            } else if (code & SE_ECL_PENUMBRAL) != 0 {
+                EclipseKind::LunarPenumbral
+            } else {
+                return None;
+            }
+        }
+    };
+    // For solar, tret[1] = first contact, tret[4] = last contact.
+    // For lunar, tret[1] = first partial-penumbral, tret[4] = last.
+    let first = if tret[1] != 0.0 { Some(tret[1]) } else { None };
+    let last = if tret[4] != 0.0 { Some(tret[4]) } else { None };
+    Some(Eclipse {
+        kind,
+        central,
+        max_jd: tret[0],
+        first_contact_jd: first,
+        last_contact_jd: last,
+    })
+}
+
+/// Find all eclipses of the requested kind(s) within `[jd_start, jd_end]`.
+/// `solar` and `lunar` flags select the categories; both default to true at
+/// the caller's discretion. Stops after `limit` events.
+pub fn eclipses_within_period(
+    jd_start: f64,
+    jd_end: f64,
+    solar: bool,
+    lunar: bool,
+    limit: usize,
+) -> Vec<Eclipse> {
+    let mut out: Vec<Eclipse> = Vec::new();
+    let categories: Vec<EclipseSearch> = match (solar, lunar) {
+        (true, true) => vec![EclipseSearch::Solar, EclipseSearch::Lunar],
+        (true, false) => vec![EclipseSearch::Solar],
+        (false, true) => vec![EclipseSearch::Lunar],
+        _ => return out,
+    };
+    for cat in categories {
+        let mut t = jd_start;
+        loop {
+            let Some(e) = next_eclipse(t, cat, false) else { break; };
+            if e.max_jd > jd_end {
+                break;
+            }
+            t = e.max_jd + 1.0;
+            out.push(e);
+            if out.len() >= limit {
+                break;
+            }
+        }
+        if out.len() >= limit {
+            break;
+        }
+    }
+    out.sort_by(|a, b| a.max_jd.partial_cmp(&b.max_jd).unwrap());
+    out.truncate(limit);
+    out
 }
 
 // ------------------------------------------------------------------------------------------------
