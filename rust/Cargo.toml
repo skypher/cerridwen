@@ -25,10 +25,16 @@ name = "cerridwen-event-generator"
 path = "src/bin/event_generator.rs"
 required-features = ["events"]
 
+[[bin]]
+name = "cerridwen-mcp"
+path = "src/bin/mcp.rs"
+required-features = ["mcp"]
+
 [features]
 default = []
 server = ["events", "axum", "tokio", "tower-http", "serde_json", "futures-util"]
 events = ["rusqlite", "serde", "serde_json"]
+mcp = ["events", "serde_json", "tokio"]
 
 [dependencies]
 swisseph = "0.1.1"
