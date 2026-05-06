@@ -50,7 +50,9 @@ async fn main() {
         .route("/v1/eclipses", get(eclipses_endpoint))
         .route("/v1/transits", get(transits_endpoint))
         .route("/v1/events.ics", get(events_ics_endpoint))
-        .route("/v1/return", get(return_endpoint));
+        .route("/v1/return", get(return_endpoint))
+        .route("/openapi.json", get(openapi_endpoint))
+        .route("/docs", get(docs_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -176,6 +178,189 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn openapi_endpoint() -> Response {
+    json_ok(openapi_spec())
+}
+
+async fn docs_endpoint() -> Response {
+    let html = r##"<!doctype html>
+<html><head>
+<title>Cerridwen API</title>
+<meta charset="utf-8">
+<script type="module" src="https://unpkg.com/rapidoc/dist/rapidoc-min.js"></script>
+</head><body>
+<rapi-doc spec-url="/openapi.json"
+          theme="dark"
+          render-style="read"
+          show-header="false"
+          allow-try="true"
+          primary-color="#9b59b6">
+</rapi-doc>
+</body></html>"##;
+    let mut resp = (StatusCode::OK, html.to_string()).into_response();
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp
+}
+
+fn openapi_spec() -> Value {
+    // String parameter shorthand.
+    let p_string = |name: &str, desc: &str, required: bool| {
+        json!({
+            "name": name, "in": "query", "required": required,
+            "description": desc, "schema": {"type": "string"},
+        })
+    };
+    let p_number = |name: &str, desc: &str, required: bool| {
+        json!({
+            "name": name, "in": "query", "required": required,
+            "description": desc, "schema": {"type": "number"},
+        })
+    };
+    let date_param = p_string("date", "ISO 8601 timestamp or Julian Day decimal", false);
+    let lat_param = p_number("latitude", "Observer latitude in degrees (-90..90)", false);
+    let long_param = p_number("longitude", "Observer longitude in degrees (-180..180)", false);
+    let tz_param = p_string("tz", "IANA timezone name (e.g. Europe/Berlin)", false);
+    let zodiac_param = p_string("zodiac", "tropical (default) or sidereal", false);
+    let ayan_param = p_string("ayanamsha", "lahiri/krishnamurti/fagan_bradley/raman/yukteshwar/...", false);
+
+    let common_params = json!([date_param, lat_param, long_param, tz_param,
+                              zodiac_param, ayan_param]);
+
+    json!({
+        "openapi": "3.0.3",
+        "info": {
+            "title": "Cerridwen API",
+            "version": env!("CARGO_PKG_VERSION"),
+            "description": "Geocentric Sun/Moon/planet data, eclipses, transits, and events backed by Swiss Ephemeris.",
+        },
+        "paths": {
+            "/v1/sun": {
+                "get": {
+                    "summary": "Sun position and rise/set",
+                    "parameters": common_params,
+                    "responses": { "200": { "description": "SunData" } }
+                }
+            },
+            "/v1/moon": {
+                "get": {
+                    "summary": "Moon position, phase, void-of-course, lunation number, etc.",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                        zodiac_param, ayan_param,
+                        {"name": "voc_traditional_only", "in": "query",
+                         "description": "Restrict VoC search to the seven traditional planets",
+                         "schema": {"type": "boolean"}}
+                    ]),
+                    "responses": { "200": { "description": "MoonData" } }
+                }
+            },
+            "/v1/body/{name}": {
+                "get": {
+                    "summary": "Per-body data: position, longitude, speed, retrograde, illumination",
+                    "parameters": json!([
+                        {"name": "name", "in": "path", "required": true,
+                         "description": "Sun, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto, Mean Node (north_node/rahu), True Node, Lilith, Chiron, Ceres, Pallas, Juno, Vesta",
+                         "schema": {"type": "string"}},
+                        date_param, lat_param, long_param, tz_param,
+                        zodiac_param, ayan_param
+                    ]),
+                    "responses": { "200": { "description": "Body data" }, "404": { "description": "Unknown body" } }
+                }
+            },
+            "/v1/houses": {
+                "get": {
+                    "summary": "House cusps and angle points",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                        {"name": "house_system", "in": "query",
+                         "description": "Letter code (P/K/W/...) or name (placidus/whole_sign/koch/...)",
+                         "schema": {"type": "string", "default": "P"}}
+                    ]),
+                    "responses": { "200": { "description": "Houses" } }
+                }
+            },
+            "/v1/eclipses": {
+                "get": {
+                    "summary": "Solar/lunar eclipse predictions",
+                    "parameters": json!([
+                        p_string("date_start", "ISO date or JD", false),
+                        p_string("date_end", "ISO date or JD (mutually exclusive with lookahead)", false),
+                        p_number("lookahead", "Days forward from date_start", false),
+                        p_string("type", "solar | lunar | both (default)", false),
+                        p_number("limit", "Max results (default 20)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Array of eclipses" } }
+                }
+            },
+            "/v1/transits": {
+                "get": {
+                    "summary": "Active transit-to-natal aspects",
+                    "parameters": json!([
+                        p_string("natal_date", "ISO date or JD of natal chart", true),
+                        p_string("transit_date", "ISO date or JD of transit moment (default now)", false),
+                        p_number("orb", "Orb in degrees (default 1.5)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Active aspects" } }
+                }
+            },
+            "/v1/return": {
+                "get": {
+                    "summary": "Next solar/lunar/planetary return",
+                    "parameters": json!([
+                        p_string("body", "Sun, Moon, Mercury, ...", true),
+                        p_string("natal_date", "ISO date or JD of natal chart", true),
+                        p_string("start_date", "Start search from (default now)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Return JD" } }
+                }
+            },
+            "/v1/events": {
+                "get": {
+                    "summary": "Database-backed astrological events",
+                    "parameters": json!([
+                        p_string("date_start", "ISO date or JD", false),
+                        p_string("date_end", "ISO date or JD (XOR lookahead)", false),
+                        p_number("lookahead", "Days forward", false),
+                        p_string("types", "Comma-separated event types", false),
+                        p_string("planets", "Comma-separated planet names", false),
+                        p_number("limit", "Max results (default 30)", false),
+                    ]),
+                    "responses": { "200": { "description": "Events array" } }
+                }
+            },
+            "/v1/events.ics": {
+                "get": {
+                    "summary": "iCalendar feed for the same events",
+                    "parameters": json!([
+                        p_string("date_start", "", false),
+                        p_string("date_end", "", false),
+                        p_number("lookahead", "", false),
+                        p_string("types", "", false),
+                        p_string("planets", "", false),
+                    ]),
+                    "responses": { "200": {
+                        "description": "RFC 5545 VCALENDAR",
+                        "content": {"text/calendar": {}}
+                    } }
+                }
+            },
+            "/v1/olivier": {
+                "get": {
+                    "summary": "Compact body positions in radians; houses if observer given",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                        p_string("house_system", "Letter code (default P)", false),
+                    ]),
+                    "responses": { "200": { "description": "Compact positions" } }
+                }
+            },
+        }
+    })
 }
 
 async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
