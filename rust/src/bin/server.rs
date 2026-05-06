@@ -48,7 +48,8 @@ async fn main() {
         .route("/v1/body/:name", get(body_endpoint))
         .route("/v1/houses", get(houses_endpoint))
         .route("/v1/eclipses", get(eclipses_endpoint))
-        .route("/v1/transits", get(transits_endpoint));
+        .route("/v1/transits", get(transits_endpoint))
+        .route("/v1/events.ics", get(events_ics_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -174,6 +175,119 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    use cerridwen::events::{get_events, EventFilter};
+    let dbfile = std::env::var("CERRIDWEN_EVENTS_DB").unwrap_or_else(|_| "events.db".into());
+    let tz = q.get("tz").map(|s| s.as_str());
+
+    let jd_start = match q.get("date_start") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let jd_end = if let Some(s) = q.get("date_end") {
+        match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        }
+    } else if let Some(s) = q.get("lookahead") {
+        match s.parse::<f64>() {
+            Ok(n) if n >= 0.0 => jd_start + n,
+            _ => return bad_request("lookahead must be non-negative"),
+        }
+    } else {
+        jd_start + 365.0
+    };
+    let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(500);
+    let split = |key: &str| -> Option<Vec<String>> {
+        q.get(key).map(|s| s.split(',').map(|x| x.to_string()).collect())
+    };
+    let filter = EventFilter {
+        types: split("types"),
+        subtypes: split("subtypes"),
+        planets: split("planets"),
+        datas: split("datas"),
+    };
+
+    let events = match get_events(&dbfile, jd_start, jd_end, limit, &filter) {
+        Ok(v) => v,
+        Err(e) => return bad_request(&format!("event query failed: {}", e)),
+    };
+
+    let mut ics = String::new();
+    ics.push_str("BEGIN:VCALENDAR\r\n");
+    ics.push_str("VERSION:2.0\r\n");
+    ics.push_str("PRODID:-//cerridwen//cerridwen-server//EN\r\n");
+    ics.push_str("CALSCALE:GREGORIAN\r\n");
+    ics.push_str("METHOD:PUBLISH\r\n");
+    ics.push_str("X-WR-CALNAME:Cerridwen astrological events\r\n");
+    for ev in &events {
+        let utc = jd_to_utc_basic(ev.jd);
+        let utc_end = jd_to_utc_basic(ev.jd + 1.0 / 1440.0); // 1-minute event
+        let title = format_event_summary(&ev.r#type, &ev.subtype, &ev.planet, &ev.data);
+        let uid = format!("cerridwen-{}-{}-{}-{}@cerridwen", ev.r#type, ev.planet, ev.data, ev.jd as i64);
+        ics.push_str("BEGIN:VEVENT\r\n");
+        ics.push_str(&format!("UID:{}\r\n", uid));
+        ics.push_str(&format!("DTSTAMP:{}\r\n", utc));
+        ics.push_str(&format!("DTSTART:{}\r\n", utc));
+        ics.push_str(&format!("DTEND:{}\r\n", utc_end));
+        ics.push_str(&format!("SUMMARY:{}\r\n", ical_escape(&title)));
+        ics.push_str(&format!(
+            "DESCRIPTION:JD {:.6}\\n{} {} {} {}\r\n",
+            ev.jd, ev.r#type, ev.subtype, ev.planet, ev.data
+        ));
+        ics.push_str("TRANSP:TRANSPARENT\r\n");
+        ics.push_str("END:VEVENT\r\n");
+    }
+    ics.push_str("END:VCALENDAR\r\n");
+
+    let mut resp = (StatusCode::OK, ics).into_response();
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/calendar; charset=utf-8"));
+    resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    resp
+}
+
+/// Produce a UTC iCal-basic timestamp (YYYYMMDDTHHMMSSZ) from a JD.
+fn jd_to_utc_basic(jd: f64) -> String {
+    // Use the same revjul-based math jd2iso uses, then reformat.
+    let iso = jd2iso(jd);
+    // iso is "YYYY-MM-DD HH:MM:SS"
+    let bytes = iso.as_bytes();
+    if bytes.len() < 19 {
+        return format!("{}", iso);
+    }
+    format!(
+        "{}{}{}T{}{}{}Z",
+        &iso[0..4],
+        &iso[5..7],
+        &iso[8..10],
+        &iso[11..13],
+        &iso[14..16],
+        &iso[17..19],
+    )
+}
+
+fn ical_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace(';', "\\;")
+        .replace(',', "\\,")
+        .replace('\n', "\\n")
+}
+
+fn format_event_summary(t: &str, st: &str, p: &str, d: &str) -> String {
+    match t {
+        "ingress" => format!("{} enters {}", p, d),
+        "rx" => format!("{} stations retrograde in {}", p, d),
+        "direct" => format!("{} stations direct in {}", p, d),
+        _ => {
+            let mode = if st.is_empty() { String::new() } else { format!(" {}", st) };
+            format!("{} {}{} {}", p, t, mode, d)
+        }
+    }
 }
 
 async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
