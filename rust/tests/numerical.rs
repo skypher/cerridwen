@@ -270,9 +270,24 @@ fn void_of_course_basic() {
     let jd = 2456867.0;
     let m = Moon::at_jd(jd);
     let nsc = m.0.next_sign_change(None);
-    let (_voc, until) = m.is_void_of_course(None);
+    let (_voc, until) = m.is_void_of_course(None, false);
     assert!(until > jd && until <= nsc + 1e-6,
             "until={} jd={} nsc={}", until, jd, nsc);
+}
+
+#[test]
+fn void_of_course_traditional_only_invariant() {
+    // The traditional flag uses a subset of the partners modern uses.
+    // Therefore: if the Moon is VoC under the modern definition (no
+    // aspects to any of the 9 bodies), it must also be VoC under the
+    // traditional definition (no aspects to 6 of those 9).
+    let m = Moon::at_jd(2456867.0);
+    let (voc_modern, _) = m.is_void_of_course(None, false);
+    let (voc_trad, _) = m.is_void_of_course(None, true);
+    if voc_modern {
+        assert!(voc_trad,
+                "modern says VoC but traditional disagrees — impossible");
+    }
 }
 
 #[test]

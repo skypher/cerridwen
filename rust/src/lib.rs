@@ -57,6 +57,17 @@ impl LatLong {
 // Aggregate "compute everything we know about X" entry points.
 // ------------------------------------------------------------------------------------------------
 
+/// Whether the Moon is void-of-course at the requested instant, and the
+/// JD at which that state is scheduled to flip.
+#[derive(Debug, Clone)]
+pub struct VoidOfCourseData {
+    pub is_void: bool,
+    pub until_jd: f64,
+    pub until_iso: String,
+    /// Whether the search was restricted to the seven traditional planets.
+    pub traditional_only: bool,
+}
+
 /// Sun summary at the requested instant.
 #[derive(Debug, Clone)]
 pub struct SunData {
@@ -64,6 +75,9 @@ pub struct SunData {
     pub iso_date: String,
     pub position: PlanetLongitude,
     pub dignity: Option<&'static str>,
+    pub mean_orbital_period: f64,
+    pub relative_orbital_velocity: f64,
+    pub next_event: Option<PlanetEvent>,
     pub next_rise: Option<PlanetEvent>,
     pub next_set: Option<PlanetEvent>,
     pub last_rise: Option<PlanetEvent>,
@@ -86,6 +100,11 @@ pub struct MoonData {
     pub age: f64,
     pub period_length: f64,
     pub dignity: Option<&'static str>,
+    pub mean_orbital_period: f64,
+    pub relative_orbital_velocity: f64,
+    pub lunation_number: i64,
+    pub void_of_course: VoidOfCourseData,
+    pub next_event: Option<PlanetEvent>,
     pub next_new_moon: PlanetEvent,
     pub next_full_moon: PlanetEvent,
     pub next_new_or_full_moon: PlanetEvent,
@@ -97,11 +116,21 @@ pub struct MoonData {
     pub last_set: Option<PlanetEvent>,
 }
 
+/// Optional knobs for `compute_moon_data`. Defaults reproduce the prior
+/// behaviour: VoC search includes all nine major bodies (modern definition).
+#[derive(Default, Clone, Copy, Debug)]
+pub struct MoonOptions {
+    pub voc_traditional_only: bool,
+}
+
 pub fn compute_sun_data(jd: Option<f64>, observer: Option<LatLong>) -> SunData {
     let jd = jd.unwrap_or_else(jd_now);
     let sun = Sun::at(Some(jd), observer);
     let position = sun.position(None);
     let dignity = sun.dignity(None);
+    let mean_orbital_period = sun.0.mean_orbital_period();
+    let relative_orbital_velocity = sun.0.relative_orbital_velocity();
+    let next_event = sun.0.next_event();
     let (next_rise, next_set, last_rise, last_set) = if observer.is_some() {
         (Some(sun.next_rise()), Some(sun.next_set()),
          Some(sun.last_rise()), Some(sun.last_set()))
@@ -113,6 +142,9 @@ pub fn compute_sun_data(jd: Option<f64>, observer: Option<LatLong>) -> SunData {
         iso_date: jd2iso(jd),
         position,
         dignity,
+        mean_orbital_period,
+        relative_orbital_velocity,
+        next_event,
         next_rise,
         next_set,
         last_rise,
@@ -121,6 +153,14 @@ pub fn compute_sun_data(jd: Option<f64>, observer: Option<LatLong>) -> SunData {
 }
 
 pub fn compute_moon_data(jd: Option<f64>, observer: Option<LatLong>) -> MoonData {
+    compute_moon_data_with(jd, observer, MoonOptions::default())
+}
+
+pub fn compute_moon_data_with(
+    jd: Option<f64>,
+    observer: Option<LatLong>,
+    opts: MoonOptions,
+) -> MoonData {
     let jd = jd.unwrap_or_else(jd_now);
     let moon = Moon::at(Some(jd), observer);
     let position = moon.position(None);
@@ -134,6 +174,18 @@ pub fn compute_moon_data(jd: Option<f64>, observer: Option<LatLong>) -> MoonData
     let age = moon.age(None);
     let period_length = moon.period_length(None);
     let dignity = moon.dignity(None);
+    let mean_orbital_period = moon.0.mean_orbital_period();
+    let relative_orbital_velocity = moon.0.relative_orbital_velocity();
+    let lunation_number = moon.lunation_number(None);
+    let (voc_is_void, voc_until_jd) =
+        moon.is_void_of_course(None, opts.voc_traditional_only);
+    let void_of_course = VoidOfCourseData {
+        is_void: voc_is_void,
+        until_jd: voc_until_jd,
+        until_iso: jd2iso(voc_until_jd),
+        traditional_only: opts.voc_traditional_only,
+    };
+    let next_event = moon.0.next_event();
     let next_new_moon = moon.next_new_moon(None);
     let next_full_moon = moon.next_full_moon(None);
     let next_new_or_full_moon = moon.next_new_or_full_moon(None);
@@ -160,6 +212,11 @@ pub fn compute_moon_data(jd: Option<f64>, observer: Option<LatLong>) -> MoonData
         age,
         period_length,
         dignity,
+        mean_orbital_period,
+        relative_orbital_velocity,
+        lunation_number,
+        void_of_course,
+        next_event,
         next_new_moon,
         next_full_moon,
         next_new_or_full_moon,

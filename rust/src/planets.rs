@@ -865,27 +865,38 @@ impl Moon {
     ///
     /// VoC is determined by searching for any major aspect (conjunction,
     /// sextile, square, trine, opposition — both dexter and sinister) the
-    /// Moon will form to a traditional planet (Sun, Mercury, Venus, Mars,
-    /// Jupiter, Saturn) or modern outer (Uranus, Neptune, Pluto) before
-    /// its next sign change.
+    /// Moon will form to a partner body before its next sign change.
     ///
-    /// If at least one such aspect is upcoming, the answer is
+    /// `traditional_only = false` (the default for the wider modern
+    /// definition) considers Sun, Mercury, Venus, Mars, Jupiter, Saturn,
+    /// Uranus, Neptune, and Pluto. `traditional_only = true` restricts the
+    /// search to the seven traditional planets (Sun through Saturn).
+    ///
+    /// If at least one aspect is upcoming, the answer is
     /// `(false, last_aspect_jd)` — VoC will *commence* at the latest
     /// aspect time. If no aspect is upcoming, `(true, next_sign_change_jd)`.
-    pub fn is_void_of_course(&self, jd: Option<f64>) -> (bool, f64) {
+    pub fn is_void_of_course(
+        &self,
+        jd: Option<f64>,
+        traditional_only: bool,
+    ) -> (bool, f64) {
         let jd = jd.unwrap_or(self.0.jd);
         let nsc = self.0.next_sign_change(Some(jd));
 
-        let partner_ids = [
-            SE_SUN, SE_MERCURY, SE_VENUS, SE_MARS, SE_JUPITER, SE_SATURN,
-            SE_URANUS, SE_NEPTUNE, SE_PLUTO,
-        ];
+        let partner_ids: &[i32] = if traditional_only {
+            &[SE_SUN, SE_MERCURY, SE_VENUS, SE_MARS, SE_JUPITER, SE_SATURN]
+        } else {
+            &[
+                SE_SUN, SE_MERCURY, SE_VENUS, SE_MARS, SE_JUPITER, SE_SATURN,
+                SE_URANUS, SE_NEPTUNE, SE_PLUTO,
+            ]
+        };
         // Major aspects, including sinister mirrors of 60/90/120.
         let major_angles = [0.0, 60.0, 90.0, 120.0, 180.0, 240.0, 270.0, 300.0];
 
         let mut latest_aspect_jd: Option<f64> = None;
 
-        for partner_id in partner_ids {
+        for &partner_id in partner_ids {
             let partner = Planet::new(partner_id, Some(jd), None);
             for &angle in &major_angles {
                 let aspects = self.0.angles_to_planet_within_period(

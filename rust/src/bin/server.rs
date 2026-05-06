@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 
 use axum::{
-    extract::Query,
+    extract::{Path as AxumPath, Query},
     http::{HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
@@ -11,8 +11,9 @@ use axum::{
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    compute_moon_data, compute_sun_data, jd2iso, jd_now, parse_jd_or_iso_date, ASPECTS, LatLong,
-    MoonData, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
+    compute_moon_data_with, compute_sun_data, jd2iso, jd_now, parse_jd_or_iso_date, ASPECTS,
+    LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
+    VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -32,7 +33,7 @@ async fn main() {
     let args = Args::parse();
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
-        let data = compute_moon_data(None, Some(observer));
+        let data = compute_moon_data_with(None, Some(observer), MoonOptions::default());
         println!("{}", serde_json::to_string_pretty(&moon_data_to_json(&data)).unwrap());
         return;
     }
@@ -41,7 +42,8 @@ async fn main() {
         .route("/v1/sun", get(sun_endpoint))
         .route("/v1/moon", get(moon_endpoint))
         .route("/v1/olivier", get(olivier_endpoint))
-        .route("/v1/events", get(events_endpoint));
+        .route("/v1/events", get(events_endpoint))
+        .route("/v1/body/:name", get(body_endpoint));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
     println!("Starting Cerridwen API server on port {}.", args.port);
@@ -66,10 +68,24 @@ async fn sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 async fn moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     match parse_observer_and_jd(&q) {
         Ok((jd, latlong)) => {
-            let data = compute_moon_data(jd, latlong);
+            let opts = MoonOptions {
+                voc_traditional_only: parse_bool(q.get("voc_traditional_only")),
+            };
+            let data = compute_moon_data_with(jd, latlong, opts);
             json_ok(moon_data_to_json(&data))
         }
         Err(e) => bad_request(&e),
+    }
+}
+
+/// Permissive bool parser: accepts "1", "true", "yes", "on" (case-insensitive).
+fn parse_bool(opt: Option<&String>) -> bool {
+    match opt {
+        Some(s) => matches!(
+            s.to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        ),
+        None => false,
     }
 }
 
@@ -113,6 +129,76 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     }
 
     json_ok(Value::Object(result))
+}
+
+async fn body_endpoint(
+    AxumPath(name): AxumPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+
+    // Allow case-insensitive lookups: "mercury", "Mercury", "MERCURY".
+    let canonical = canonical_body_name(&name);
+    let planet = match canonical {
+        Some(c) => match body_for(c, jd) {
+            Some(p) => p,
+            None => return bad_request(&format!("unknown body: {}", name)),
+        },
+        None => return bad_request(&format!("unknown body: {}", name)),
+    };
+
+    let mut o = serde_json::Map::new();
+    o.insert("jd".into(), json!(jd));
+    o.insert("iso_date".into(), json!(jd2iso(jd)));
+    o.insert("name".into(), json!(planet.name()));
+    o.insert("position".into(), planet_longitude_to_json(&planet.position(None)));
+    o.insert("longitude".into(), json!(planet.longitude_at(jd)));
+    o.insert("latitude".into(), json!(planet.latitude(None)));
+    o.insert("distance".into(), json!(planet.distance(None)));
+    o.insert("speed".into(), json!(planet.speed(None)));
+    o.insert("is_rx".into(), json!(planet.is_rx(None)));
+    o.insert("is_stationing".into(), json!(planet.is_stationing(None)));
+    o.insert("illumination".into(), json!(planet.illumination(None)));
+    o.insert("mean_orbital_period".into(), json!(planet.mean_orbital_period()));
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(planet.relative_orbital_velocity()),
+    );
+
+    if let Some(ev) = planet.next_event() {
+        o.insert("next_event".into(), planet_event_to_json(&ev));
+    }
+
+    if latlong.is_some() {
+        // Build a fresh Planet with the observer set so rise/set work.
+        let with_observer = Planet::new(planet.id, Some(jd), latlong);
+        o.insert("next_rise".into(), planet_event_to_json(&with_observer.next_rise()));
+        o.insert("next_set".into(), planet_event_to_json(&with_observer.next_set()));
+        o.insert("last_rise".into(), planet_event_to_json(&with_observer.last_rise()));
+        o.insert("last_set".into(), planet_event_to_json(&with_observer.last_set()));
+    }
+
+    json_ok(Value::Object(o))
+}
+
+fn canonical_body_name(s: &str) -> Option<&'static str> {
+    match s.to_ascii_lowercase().as_str() {
+        "sun" => Some("Sun"),
+        "moon" => Some("Moon"),
+        "mercury" => Some("Mercury"),
+        "venus" => Some("Venus"),
+        "mars" => Some("Mars"),
+        "jupiter" => Some("Jupiter"),
+        "saturn" => Some("Saturn"),
+        "uranus" => Some("Uranus"),
+        "neptune" => Some("Neptune"),
+        "pluto" => Some("Pluto"),
+        _ => None,
+    }
 }
 
 async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
@@ -287,11 +373,26 @@ fn sun_data_to_json(d: &SunData) -> Value {
     o.insert("iso_date".into(), json!(d.iso_date));
     o.insert("position".into(), planet_longitude_to_json(&d.position));
     o.insert("dignity".into(), json!(d.dignity));
+    o.insert("mean_orbital_period".into(), json!(d.mean_orbital_period));
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(d.relative_orbital_velocity),
+    );
+    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
     if let Some(e) = &d.next_rise { o.insert("next_rise".into(), planet_event_to_json(e)); }
     if let Some(e) = &d.next_set  { o.insert("next_set".into(),  planet_event_to_json(e)); }
     if let Some(e) = &d.last_rise { o.insert("last_rise".into(), planet_event_to_json(e)); }
     if let Some(e) = &d.last_set  { o.insert("last_set".into(),  planet_event_to_json(e)); }
     Value::Object(o)
+}
+
+fn void_of_course_to_json(v: &VoidOfCourseData) -> Value {
+    json!({
+        "is_void": v.is_void,
+        "until_jd": v.until_jd,
+        "until_iso": v.until_iso,
+        "traditional_only": v.traditional_only,
+    })
 }
 
 fn moon_data_to_json(d: &MoonData) -> Value {
@@ -309,6 +410,14 @@ fn moon_data_to_json(d: &MoonData) -> Value {
     o.insert("age".into(), json!(d.age));
     o.insert("period_length".into(), json!(d.period_length));
     o.insert("dignity".into(), json!(d.dignity));
+    o.insert("mean_orbital_period".into(), json!(d.mean_orbital_period));
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(d.relative_orbital_velocity),
+    );
+    o.insert("lunation_number".into(), json!(d.lunation_number));
+    o.insert("void_of_course".into(), void_of_course_to_json(&d.void_of_course));
+    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
     o.insert("next_new_moon".into(), planet_event_to_json(&d.next_new_moon));
     o.insert("next_full_moon".into(), planet_event_to_json(&d.next_full_moon));
     o.insert("next_new_or_full_moon".into(), planet_event_to_json(&d.next_new_or_full_moon));

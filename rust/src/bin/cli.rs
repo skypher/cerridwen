@@ -1,14 +1,21 @@
-use cerridwen::{compute_moon_data, compute_sun_data, render_delta_days, jd2iso, VERSION};
+use cerridwen::{
+    compute_moon_data_with, compute_sun_data, jd2iso, render_delta_days, MoonOptions, VERSION,
+};
 use chrono::Local;
 use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(name = "cerridwen", version = VERSION,
           about = "Print sun and moon data for the current moment")]
-struct Args {}
+struct Args {
+    /// Restrict the void-of-course calculation to the seven traditional
+    /// planets (Sun..Saturn), excluding Uranus, Neptune, and Pluto.
+    #[arg(long)]
+    voc_traditional_only: bool,
+}
 
 fn main() {
-    let _ = Args::parse();
+    let args = Args::parse();
 
     let sun = compute_sun_data(None, None);
     println!("Julian day: {}", sun.jd);
@@ -25,7 +32,19 @@ fn main() {
         sec,
     );
 
-    let moon = compute_moon_data(None, None);
+    if let Some(ev) = &sun.next_event {
+        println!(
+            "next sun event: {} (in {})",
+            ev.description,
+            render_delta_days(ev.delta_days(None)),
+        );
+    }
+
+    let moon = compute_moon_data_with(
+        None,
+        None,
+        MoonOptions { voc_traditional_only: args.voc_traditional_only },
+    );
     let (sign, deg, min, sec) = moon.position.rel_tuple();
     println!(
         "Moon: {} / {} {} {}' {}\"",
@@ -62,4 +81,28 @@ fn main() {
         jd2iso(next_full.jd),
         next_full.jd,
     );
+
+    println!("lunation number: {}", moon.lunation_number);
+
+    let voc = &moon.void_of_course;
+    let voc_label = if voc.traditional_only { " (traditional)" } else { "" };
+    if voc.is_void {
+        println!(
+            "void of course{}: yes — until {} ({})",
+            voc_label, voc.until_iso, voc.until_jd,
+        );
+    } else {
+        println!(
+            "void of course{}: no — VoC will start at {} ({})",
+            voc_label, voc.until_iso, voc.until_jd,
+        );
+    }
+
+    if let Some(ev) = &moon.next_event {
+        println!(
+            "next moon event: {} (in {})",
+            ev.description,
+            render_delta_days(ev.delta_days(None)),
+        );
+    }
 }
