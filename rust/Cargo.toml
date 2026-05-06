@@ -45,7 +45,7 @@ rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 axum = { version = "0.7", optional = true }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
 futures-util = { version = "0.3", optional = true }
-tower-http = { version = "0.5", features = ["cors"], optional = true }
+tower-http = { version = "0.5", features = ["cors", "fs"], optional = true }
 
 [dev-dependencies]
 approx = "0.5"

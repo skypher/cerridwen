@@ -1,10 +1,153 @@
-<html>
-    <head>
-      <script src="fabric.js"></script>
-      <script src="circlerays.js"></script>
-    </head>
-    <body>
-      <canvas id="chart" width="800" height="600"/>
-      <script src="chart.js"></script>
-    </body>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cerridwen — chart wheel</title>
+  <style>
+    body { margin: 0; background: #111; color: #eee; font: 14px/1.4 system-ui, sans-serif; }
+    header { padding: 0.6rem 1rem; border-bottom: 1px solid #333; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    header input { background: #222; color: #eee; border: 1px solid #444; padding: 0.3rem 0.5rem; }
+    header select { background: #222; color: #eee; border: 1px solid #444; }
+    button { background: #2a2a3a; color: #eee; border: 1px solid #444; padding: 0.3rem 0.6rem; cursor: pointer; }
+    button:hover { background: #3a3a4a; }
+    main { display: flex; gap: 1.5rem; padding: 1rem; flex-wrap: wrap; }
+    svg { background: #000; border-radius: 50%; }
+    .planet-list { font-family: ui-monospace, monospace; font-size: 12px; }
+    .planet-list .row { display: grid; grid-template-columns: 110px 80px 110px 1fr; gap: 0.5rem; padding: 0.1rem 0; }
+    .err { color: #f55; }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Cerridwen</strong>
+    <label>lat <input id="lat" value="52.5" size="6"></label>
+    <label>lon <input id="long" value="13.4" size="6"></label>
+    <label>houses
+      <select id="house">
+        <option value="P">Placidus</option>
+        <option value="K">Koch</option>
+        <option value="W">Whole-sign</option>
+        <option value="O">Porphyry</option>
+        <option value="R">Regiomontanus</option>
+        <option value="C">Campanus</option>
+      </select>
+    </label>
+    <button id="reload">refresh</button>
+    <span id="ts" style="margin-left:auto; opacity:0.6"></span>
+  </header>
+  <main>
+    <svg id="wheel" width="640" height="640" viewBox="-340 -340 680 680"></svg>
+    <section style="min-width: 380px">
+      <h3 style="margin:0 0 0.5rem">Planets</h3>
+      <div class="planet-list" id="planet-list"></div>
+      <h3 style="margin:1rem 0 0.5rem">Houses</h3>
+      <div class="planet-list" id="house-list"></div>
+      <p id="err" class="err"></p>
+    </section>
+  </main>
+  <script>
+    const SIGNS = ["Ari","Tau","Gem","Cnc","Leo","Vir","Lib","Sco","Sgr","Cap","Aqr","Psc"];
+    const GLYPHS = {
+      sun:"☉", moon:"☽", mercury:"☿", venus:"♀", mars:"♂",
+      jupiter:"♃", saturn:"♄", uranus:"♅", neptune:"♆", pluto:"♇",
+    };
+    function polar(r, deg) {
+      // Astrological convention: 0° Aries on the left (the Ascendant axis),
+      // increasing counter-clockwise. SVG y-axis grows downward, so we
+      // negate sin to flip vertically.
+      const rad = (180 - deg) * Math.PI / 180;
+      return [r * Math.cos(rad), -r * Math.sin(rad)];
+    }
+    function deg2rel(deg) {
+      const sign = SIGNS[Math.floor(deg / 30) % 12];
+      const inSign = deg - Math.floor(deg / 30) * 30;
+      const d = Math.floor(inSign);
+      const m = Math.floor((inSign - d) * 60);
+      return `${d}° ${sign} ${m}'`;
+    }
+
+    async function fetchData() {
+      const lat = document.getElementById('lat').value;
+      const long = document.getElementById('long').value;
+      const hsys = document.getElementById('house').value;
+      const olivier = await fetch(`/v1/olivier?latitude=${lat}&longitude=${long}&house_system=${hsys}`).then(r => r.json());
+      const houses = await fetch(`/v1/houses?latitude=${lat}&longitude=${long}&house_system=${hsys}`).then(r => r.json());
+      return { olivier, houses };
+    }
+
+    function render({ olivier, houses }) {
+      const svg = document.getElementById('wheel');
+      const parts = [];
+      parts.push(`<circle cx=0 cy=0 r=310 fill="none" stroke="#888" stroke-width=1.5/>`);
+      parts.push(`<circle cx=0 cy=0 r=260 fill="none" stroke="#888"/>`);
+      parts.push(`<circle cx=0 cy=0 r=150 fill="none" stroke="#444"/>`);
+      parts.push(`<circle cx=0 cy=0 r=60 fill="none" stroke="#666"/>`);
+      // sign boundaries
+      for (let i = 0; i < 12; i++) {
+        const deg = i * 30;
+        const [x0, y0] = polar(260, deg);
+        const [x1, y1] = polar(310, deg);
+        parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="#888" stroke-width=1.2/>`);
+      }
+      // 5° / 1° degree ticks
+      for (let i = 0; i < 360; i++) {
+        if (i % 30 === 0) continue;
+        const [x0, y0] = polar(305, i);
+        const [x1, y1] = polar(260, i);
+        const w = (i % 5 === 0) ? 0.6 : 0.2;
+        parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="#666" stroke-width=${w}/>`);
+      }
+      // sign glyphs
+      SIGNS.forEach((s, i) => {
+        const [x, y] = polar(285, i * 30 + 15);
+        parts.push(`<text x=${x} y=${y+6} font-size=18 fill="#aaa" text-anchor="middle">${s}</text>`);
+      });
+      // house cusps
+      houses.cusps.forEach((c, i) => {
+        const deg = c.absolute_degrees;
+        const [x0, y0] = polar(60, deg);
+        const [x1, y1] = polar(260, deg);
+        const isAngular = (i % 3 === 0);
+        parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="${isAngular ? '#ddd' : '#555'}" stroke-width=${isAngular ? 1.5 : 0.6}/>`);
+        const [tx, ty] = polar(70, deg + 1.5);
+        parts.push(`<text x=${tx} y=${ty+4} font-size=10 fill="#888">${i+1}</text>`);
+      });
+      // planet glyphs
+      Object.entries(GLYPHS).forEach(([name, glyph]) => {
+        const lon = olivier[name];
+        if (lon === undefined) return;
+        const deg = lon * 180 / Math.PI;
+        const [x, y] = polar(200, deg);
+        parts.push(`<text x=${x} y=${y+7} font-size=22 fill="#9b59b6" text-anchor="middle">${glyph}</text>`);
+        const [lx, ly] = polar(245, deg);
+        parts.push(`<line x1=${lx} y1=${ly} x2=${lx*0.92} y2=${ly*0.92} stroke="#9b59b6"/>`);
+      });
+      svg.innerHTML = parts.join("");
+      // sidebar
+      const planetList = Object.entries(GLYPHS).map(([n, g]) => {
+        const lon = olivier[n];
+        if (lon === undefined) return "";
+        const deg = lon * 180 / Math.PI;
+        return `<div class="row"><span>${g} ${n}</span><span>${deg.toFixed(2)}°</span><span>${deg2rel(deg)}</span><span></span></div>`;
+      }).join("");
+      document.getElementById('planet-list').innerHTML = planetList;
+      document.getElementById('house-list').innerHTML = houses.cusps.map((c, i) =>
+        `<div class="row"><span>House ${i+1}</span><span>${c.absolute_degrees.toFixed(2)}°</span><span>${deg2rel(c.absolute_degrees)}</span><span>${c.sign}</span></div>`
+      ).join("");
+      document.getElementById('ts').textContent = `@ ${olivier.iso_date}`;
+    }
+
+    async function refresh() {
+      try {
+        const data = await fetchData();
+        render(data);
+        document.getElementById('err').textContent = "";
+      } catch (e) {
+        document.getElementById('err').textContent = String(e);
+      }
+    }
+    document.getElementById('reload').addEventListener('click', refresh);
+    refresh();
+  </script>
+</body>
 </html>

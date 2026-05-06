@@ -65,6 +65,7 @@ async fn main() {
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
         .route("/openapi.json", get(openapi_endpoint))
         .route("/docs", get(docs_endpoint))
+        .route("/chart", get(chart_endpoint))
         .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
         .with_state(cache);
 
@@ -356,6 +357,14 @@ fn position_stream(
 
 async fn openapi_endpoint() -> Response {
     json_ok(openapi_spec())
+}
+
+async fn chart_endpoint() -> Response {
+    // Embedded at compile time; needs no static-file routing.
+    let html = include_str!("../../../chart/chart.html");
+    let mut resp = (StatusCode::OK, html.to_string()).into_response();
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp
 }
 
 async fn docs_endpoint() -> Response {
