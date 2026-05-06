@@ -27,7 +27,7 @@ required-features = ["events"]
 
 [features]
 default = []
-server = ["events", "axum", "tokio", "tower-http", "serde_json"]
+server = ["events", "axum", "tokio", "tower-http", "serde_json", "futures-util"]
 events = ["rusqlite", "serde", "serde_json"]
 
 [dependencies]
@@ -43,7 +43,8 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 axum = { version = "0.7", optional = true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"], optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
+futures-util = { version = "0.3", optional = true }
 tower-http = { version = "0.5", features = ["cors"], optional = true }
 
 [dev-dependencies]

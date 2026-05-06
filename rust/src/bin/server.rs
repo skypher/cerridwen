@@ -10,10 +10,12 @@ use axum::{
     extract::{Path as AxumPath, Query},
     http::{HeaderValue, Request, StatusCode},
     middleware::{self, Next},
-    response::{IntoResponse, Response},
+    response::{sse::{Event as SseEvent, KeepAlive, Sse}, IntoResponse, Response},
     routing::get,
     Router,
 };
+use futures_util::stream::{self, Stream};
+use std::convert::Infallible;
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
@@ -58,6 +60,9 @@ async fn main() {
         .route("/v1/transits", get(transits_endpoint))
         .route("/v1/events.ics", get(events_ics_endpoint))
         .route("/v1/return", get(return_endpoint))
+        .route("/v1/stream/sun", get(stream_sun_endpoint))
+        .route("/v1/stream/moon", get(stream_moon_endpoint))
+        .route("/v1/stream/body/:name", get(stream_body_endpoint))
         .route("/openapi.json", get(openapi_endpoint))
         .route("/docs", get(docs_endpoint))
         .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
@@ -240,6 +245,10 @@ async fn cache_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
+    // Streaming endpoints are infinite — never read them to completion.
+    if req.uri().path().starts_with("/v1/stream/") {
+        return next.run(req).await;
+    }
     let key = format!(
         "{}?{}",
         req.uri().path(),
@@ -276,6 +285,73 @@ async fn cache_middleware(
     let mut resp = Response::from_parts(parts, Body::from(bytes));
     resp.headers_mut().insert("X-Cache", HeaderValue::from_static("MISS"));
     resp
+}
+
+// ------------------------------------------------------------------------------------------------
+// SSE position streams — emit a fresh position every `interval` seconds.
+// ------------------------------------------------------------------------------------------------
+
+fn parse_interval_seconds(opt: Option<&String>) -> u64 {
+    opt.and_then(|s| s.parse::<u64>().ok())
+        .map(|n| n.clamp(1, 3600))
+        .unwrap_or(60)
+}
+
+async fn stream_sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let interval = parse_interval_seconds(q.get("interval"));
+    let stream = position_stream("Sun".to_string(), interval);
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn stream_moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+    let interval = parse_interval_seconds(q.get("interval"));
+    let stream = position_stream("Moon".to_string(), interval);
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+async fn stream_body_endpoint(
+    AxumPath(name): AxumPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let canonical = match canonical_body_name(&name) {
+        Some(c) => c.to_string(),
+        None => return not_found(&format!("unknown body: {}", name)),
+    };
+    let interval = parse_interval_seconds(q.get("interval"));
+    let stream = position_stream(canonical, interval);
+    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+}
+
+fn position_stream(
+    canonical: String,
+    interval_seconds: u64,
+) -> impl Stream<Item = Result<SseEvent, Infallible>> {
+    let mut ticker = tokio::time::interval(Duration::from_secs(interval_seconds));
+    // Fire on first poll and then at each interval.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    stream::unfold((canonical, ticker), |(name, mut ticker)| async move {
+        ticker.tick().await;
+        let jd = jd_now();
+        let planet = match body_for(&name, jd) {
+            Some(p) => p,
+            None => return None,
+        };
+        let lon = planet.longitude_at(jd);
+        let pos = PlanetLongitude::new(lon);
+        let payload = json!({
+            "body": name,
+            "jd": jd,
+            "iso_date": jd2iso(jd),
+            "longitude": lon,
+            "speed": planet.speed(None),
+            "is_rx": planet.is_rx(None),
+            "position": planet_longitude_to_json(&pos),
+        });
+        let event = SseEvent::default()
+            .event("position")
+            .data(payload.to_string());
+        Some((Ok(event), (name, ticker)))
+    })
 }
 
 async fn openapi_endpoint() -> Response {
