@@ -1296,7 +1296,19 @@ pub fn next_return(body_id: i32, natal_jd: f64, search_from_jd: f64) -> Option<f
         SE_MARS => 690.0,
         SE_JUPITER => 365.0 * 12.5,
         SE_SATURN => 365.0 * 30.0,
-        _ => 365.0 * 200.0,
+        SE_URANUS => 365.0 * 85.0,
+        SE_NEPTUNE => 365.0 * 165.0,
+        SE_PLUTO => 365.0 * 250.0,
+        SE_MEAN_NODE | SE_TRUE_NODE => 365.0 * 19.0,
+        SE_MEAN_APOG | SE_OSCU_APOG => 365.0 * 9.0,
+        SE_CHIRON => 365.0 * 52.0,
+        SE_CERES => 365.0 * 5.0,
+        SE_PALLAS => 365.0 * 5.0,
+        SE_JUNO => 365.0 * 5.0,
+        SE_VESTA => 365.0 * 4.5,
+        // Anything truly unknown gets a small budget — better to fail fast
+        // than blow MAX_DATA_POINTS.
+        _ => 365.0 * 30.0,
     };
     body.next_angle_to_planet(&target, 0.0, Some(search_from_jd), Some(lookahead), None, None, None)
         .map(|(jd, _, _)| jd)
