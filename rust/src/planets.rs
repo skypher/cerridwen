@@ -607,38 +607,55 @@ impl Planet {
         1.0 / (self.max_speed() * 3.0)
     }
 
-    pub fn next_sign_change(&self, jd: Option<f64>) -> f64 {
+    /// Find the next time this body crosses a sign boundary. Returns
+    /// `None` if no crossing is found within the body's typical lookahead
+    /// — possible for very slow bodies near a stationary point where the
+    /// motion within the search window is just shy of one full sign.
+    /// Callers that previously relied on a panic should pivot to handling
+    /// the None case explicitly (skip the ingress event etc.).
+    pub fn try_next_sign_change(&self, jd: Option<f64>) -> Option<f64> {
         let jd = jd.unwrap_or(self.jd);
         let cur_sign = self.sign(Some(jd));
-        let cur_idx = SIGNS.iter().position(|s| *s == cur_sign).unwrap();
+        let cur_idx = SIGNS.iter().position(|s| *s == cur_sign)?;
 
         // Direction-aware targeting: a retrograde-moving body crosses the
         // *previous* sign boundary next. Mean-node-style perpetual
         // retrogrades require this to terminate at all.
         let going_retrograde = self.speed(Some(jd)) < 0.0;
-        let next_idx = if going_retrograde {
-            (cur_idx + 11) % 12
+        let try_directions: [bool; 2] = if going_retrograde {
+            [true, false]
         } else {
-            (cur_idx + 1) % 12
+            [false, true]
         };
-        let target = FixedZodiacPoint::new(next_idx as f64 * 30.0);
-        let result = self.next_angle_to_planet(
-            &target,
-            0.0,
-            Some(jd),
-            Some(self.sign_change_lookahead()),
-            None,
-            None,
-            None,
-        );
-        let (event_jd, _, _) = result.expect("next_sign_change found nothing");
-        // Nudge slightly past the boundary so callers don't see the previous sign.
-        // For retrograde motion the nudge goes the other way.
-        if going_retrograde {
-            event_jd - MAXIMUM_ERROR
-        } else {
-            event_jd + MAXIMUM_ERROR
+        let lookahead = self.sign_change_lookahead();
+
+        for &retro in &try_directions {
+            let next_idx = if retro {
+                (cur_idx + 11) % 12
+            } else {
+                (cur_idx + 1) % 12
+            };
+            let target = FixedZodiacPoint::new(next_idx as f64 * 30.0);
+            let r = self.next_angle_to_planet(
+                &target, 0.0, Some(jd), Some(lookahead), None, None, None,
+            );
+            if let Some((event_jd, _, _)) = r {
+                let nudged = if retro {
+                    event_jd - MAXIMUM_ERROR
+                } else {
+                    event_jd + MAXIMUM_ERROR
+                };
+                return Some(nudged);
+            }
         }
+        None
+    }
+
+    /// Convenience wrapper. Panics on no result — kept for back-compat with
+    /// existing callers that always expect a sign change to exist.
+    pub fn next_sign_change(&self, jd: Option<f64>) -> f64 {
+        self.try_next_sign_change(jd)
+            .unwrap_or_else(|| panic!("next_sign_change: no crossing found for body id {}", self.id))
     }
 
     pub fn time_left_in_sign(&self, jd: Option<f64>) -> f64 {
@@ -658,9 +675,9 @@ impl Planet {
             SE_MARS => 300.0,
             SE_JUPITER => 365.0 * 1.5,
             SE_SATURN => 365.0 * 3.5,
-            SE_URANUS => 365.0 * 8.0,
-            SE_NEPTUNE => 365.0 * 16.0,
-            SE_PLUTO => 365.0 * 25.0,
+            SE_URANUS => 365.0 * 10.0,
+            SE_NEPTUNE => 365.0 * 18.0,
+            SE_PLUTO => 365.0 * 35.0,
             SE_MEAN_NODE | SE_TRUE_NODE => 365.0 * 2.0,
             SE_MEAN_APOG | SE_OSCU_APOG => 365.0,
             SE_CHIRON => 365.0 * 5.0,
@@ -684,13 +701,14 @@ impl Planet {
             candidates.push(self.next_set());
         }
 
-        // Sign ingress.
-        let nsc = self.next_sign_change(None);
-        let next_sign = self.sign(Some(nsc));
-        candidates.push(PlanetEvent::new(
-            format!("{} ingress into {}", self.name(), next_sign),
-            nsc,
-        ));
+        // Sign ingress (may be unfindable for very slow bodies near a station).
+        if let Some(nsc) = self.try_next_sign_change(None) {
+            let next_sign = self.sign(Some(nsc));
+            candidates.push(PlanetEvent::new(
+                format!("{} ingress into {}", self.name(), next_sign),
+                nsc,
+            ));
+        }
 
         // Retrograde station (where applicable).
         if self.has_rx_stations() {
@@ -868,7 +886,11 @@ impl Body for Planet {
             SE_URANUS => 365.0 * 84.0,
             SE_NEPTUNE => 365.0 * 165.0,
             SE_PLUTO => 365.0 * 248.0,
-            SE_MEAN_NODE | SE_TRUE_NODE => 365.0 * 19.0,
+            // Mean node moves smoothly; true node oscillates fast — keep
+            // the latter's search window small so next_rx_event terminates
+            // quickly. The next true-node station is typically days away.
+            SE_MEAN_NODE => 365.0 * 19.0,
+            SE_TRUE_NODE => 60.0,
             SE_MEAN_APOG | SE_OSCU_APOG => 365.0 * 9.0,
             SE_CHIRON => 365.0 * 51.0,
             SE_CERES | SE_PALLAS | SE_JUNO | SE_VESTA => 365.0 * 5.0,
@@ -1291,8 +1313,11 @@ pub fn next_return(body_id: i32, natal_jd: f64, search_from_jd: f64) -> Option<f
     let lookahead = match body_id {
         SE_SUN => 380.0,
         SE_MOON => 31.0,
-        SE_MERCURY => 100.0,
-        SE_VENUS => 230.0,
+        // Mercury/Venus look heliocentric-fast but geocentrically they
+        // average 360°/yr (they oscillate around the Sun), so the next
+        // return to a given natal longitude is roughly annual.
+        SE_MERCURY => 400.0,
+        SE_VENUS => 400.0,
         SE_MARS => 690.0,
         SE_JUPITER => 365.0 * 12.5,
         SE_SATURN => 365.0 * 30.0,

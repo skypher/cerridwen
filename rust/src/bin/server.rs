@@ -70,6 +70,7 @@ async fn main() {
         .route("/chart", get(chart_endpoint))
         .route("/app", get(app_endpoint))
         .route("/", get(app_endpoint))
+        .route("/favicon.ico", get(favicon_endpoint))
         .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
         .with_state(cache);
 
@@ -386,6 +387,16 @@ fn position_stream(
 
 async fn openapi_endpoint() -> Response {
     json_ok(openapi_spec())
+}
+
+async fn favicon_endpoint() -> Response {
+    // Tiny SVG favicon — a purple crescent moon glyph. Inline avoids 404
+    // chatter when browsers autofetch /favicon.ico.
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0e0e14"/><text x="16" y="22" font-size="20" text-anchor="middle" fill="#9b59b6">☽</text></svg>"##;
+    let mut resp = (StatusCode::OK, svg.to_string()).into_response();
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("image/svg+xml"));
+    resp.headers_mut().insert("Cache-Control", HeaderValue::from_static("public, max-age=86400"));
+    resp
 }
 
 async fn app_endpoint() -> Response {
