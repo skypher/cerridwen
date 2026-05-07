@@ -1484,6 +1484,66 @@ pub fn fixed_star(name: &str, jd_ut: f64) -> Result<FixedStar, String> {
 }
 
 // ------------------------------------------------------------------------------------------------
+// Instantaneous aspect grid — all aspects between every pair of bodies at
+// `jd`. Shaped like a transit result but symmetric: each aspect appears once.
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct InstantAspect {
+    pub body_a: String,
+    pub body_b: String,
+    pub aspect_name: &'static str,
+    pub aspect_mode: Option<&'static str>,
+    pub exact_angle: f64,
+    pub orb_distance: f64,
+    /// True if `body_a` is the faster body and the aspect is tightening.
+    pub applying: bool,
+}
+
+pub fn compute_aspects_at(jd: f64, bodies: &[i32], orb: f64) -> Vec<InstantAspect> {
+    init_swe();
+    let aspects = major_aspects();
+    let dt = 1.0 / 24.0;
+    let lon: Vec<f64> = bodies.iter()
+        .map(|&id| swe::calc_ut(jd, id as u32, SEFLG_SWIEPH as u32)
+            .map(|r| r.out[0]).unwrap_or(f64::NAN))
+        .collect();
+    let lon_next: Vec<f64> = bodies.iter()
+        .map(|&id| swe::calc_ut(jd + dt, id as u32, SEFLG_SWIEPH as u32)
+            .map(|r| r.out[0]).unwrap_or(f64::NAN))
+        .collect();
+
+    let mut out = Vec::new();
+    for i in 0..bodies.len() {
+        for j in (i + 1)..bodies.len() {
+            let a = lon[i];
+            let b = lon[j];
+            let an = lon_next[i];
+            let bn = lon_next[j];
+            let angle = (a - b).rem_euclid(360.0);
+            let angle_next = (an - bn).rem_euclid(360.0);
+            for &(target, name, mode) in aspects {
+                let dist = mod360_distance(angle, target);
+                if dist <= orb {
+                    let dist_next = mod360_distance(angle_next, target);
+                    out.push(InstantAspect {
+                        body_a: swe::get_planet_name(bodies[i]),
+                        body_b: swe::get_planet_name(bodies[j]),
+                        aspect_name: name,
+                        aspect_mode: mode,
+                        exact_angle: target,
+                        orb_distance: dist,
+                        applying: dist_next < dist,
+                    });
+                }
+            }
+        }
+    }
+    out.sort_by(|a, b| a.orb_distance.partial_cmp(&b.orb_distance).unwrap());
+    out
+}
+
+// ------------------------------------------------------------------------------------------------
 // Sidereal zodiac / ayanamshas
 // ------------------------------------------------------------------------------------------------
 

@@ -19,10 +19,10 @@ use std::convert::Infallible;
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    compute_transits, default_transit_bodies, eclipses_within_period, fixed_star, jd2iso, jd_now,
-    next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
-    valid_house_systems, ActiveTransit, ASPECTS, Eclipse, Houses, LatLong, MoonData,
+    apply_ayanamsha, compute_aspects_at, compute_ayanamsha, compute_houses, compute_moon_data_with,
+    compute_sun_data, compute_transits, default_transit_bodies, eclipses_within_period, fixed_star,
+    jd2iso, jd_now, next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
+    valid_house_systems, ActiveTransit, ASPECTS, Eclipse, Houses, InstantAspect, LatLong, MoonData,
     MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
@@ -61,6 +61,7 @@ async fn main() {
         .route("/v1/events.ics", get(events_ics_endpoint))
         .route("/v1/return", get(return_endpoint))
         .route("/v1/star/:name", get(star_endpoint))
+        .route("/v1/aspects", get(aspects_endpoint))
         .route("/v1/stream/sun", get(stream_sun_endpoint))
         .route("/v1/stream/moon", get(stream_moon_endpoint))
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
@@ -177,6 +178,31 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     ];
     for (name, body) in bodies {
         result.insert(name.into(), json!(body.longitude(jd).to_radians()));
+    }
+
+    // Extras: lunar nodes, Lilith, Chiron, the four asteroids — fetched
+    // via raw Planet so we don't need 8 more wrapper macro instantiations
+    // here.
+    use cerridwen::planets::{
+        SE_CERES, SE_CHIRON, SE_JUNO, SE_MEAN_APOG, SE_MEAN_NODE, SE_PALLAS, SE_VESTA,
+    };
+    let extras: &[(&str, i32)] = &[
+        ("north_node", SE_MEAN_NODE),
+        ("lilith", SE_MEAN_APOG),
+        ("chiron", SE_CHIRON),
+        ("ceres", SE_CERES),
+        ("pallas", SE_PALLAS),
+        ("juno", SE_JUNO),
+        ("vesta", SE_VESTA),
+    ];
+    for (name, id) in extras {
+        let p = Planet::new(*id, Some(jd), None);
+        result.insert((*name).into(), json!(p.longitude_at(jd).to_radians()));
+    }
+    // Convenience: south_node opposes north_node by 180°.
+    if let Some(nn) = result.get("north_node").and_then(|v| v.as_f64()) {
+        let sn = (nn + std::f64::consts::PI) % (2.0 * std::f64::consts::PI);
+        result.insert("south_node".into(), json!(sn));
     }
 
     if let Some(ll) = latlong {
@@ -479,6 +505,16 @@ fn openapi_spec() -> Value {
                     "responses": { "200": { "description": "Array of eclipses" } }
                 }
             },
+            "/v1/aspects": {
+                "get": {
+                    "summary": "Instantaneous aspect grid between every pair of planets",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_number("orb", "Orb in degrees (default 5)", false),
+                    ]),
+                    "responses": { "200": { "description": "Aspect array" } }
+                }
+            },
             "/v1/transits": {
                 "get": {
                     "summary": "Active transit-to-natal aspects",
@@ -556,6 +592,42 @@ fn openapi_spec() -> Value {
                 }
             },
         }
+    })
+}
+
+async fn aspects_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _ll) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let orb: f64 = match q.get("orb") {
+        Some(s) => match s.parse::<f64>() {
+            Ok(v) if v > 0.0 && v < 30.0 => v,
+            _ => return bad_request("orb must be in (0, 30) degrees"),
+        },
+        None => 5.0,
+    };
+    let bodies = default_transit_bodies();
+    let aspects = compute_aspects_at(jd, &bodies, orb);
+    let arr: Vec<Value> = aspects.iter().map(instant_aspect_to_json).collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "orb": orb,
+        "aspects": arr,
+    }))
+}
+
+fn instant_aspect_to_json(t: &InstantAspect) -> Value {
+    json!({
+        "body_a": t.body_a,
+        "body_b": t.body_b,
+        "aspect": t.aspect_name,
+        "mode": t.aspect_mode,
+        "exact_angle": t.exact_angle,
+        "orb_distance": t.orb_distance,
+        "applying": t.applying,
     })
 }
 

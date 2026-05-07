@@ -10,11 +10,11 @@ use std::io::{self, BufRead, Write};
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    compute_transits, default_transit_bodies, eclipses_within_period, fixed_star, jd2iso, jd_now,
-    next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, ActiveTransit,
-    Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude,
-    SunData, VoidOfCourseData,
+    apply_ayanamsha, compute_aspects_at, compute_ayanamsha, compute_houses, compute_moon_data_with,
+    compute_sun_data, compute_transits, default_transit_bodies, eclipses_within_period, fixed_star,
+    jd2iso, jd_now, next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
+    ActiveTransit, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData,
+    PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use serde_json::{json, Value};
 
@@ -190,6 +190,14 @@ fn tools_list() -> Value {
                     "tz":         { "type": "string" }
                 }
             })),
+            tool_def("get_aspects", "Instantaneous major aspects between every pair of planets at the requested moment.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" },
+                    "orb":  { "type": "number", "description": "Degrees, default 5" }
+                }
+            })),
             tool_def("get_star", "Fixed-star position (Sirius, Vega, Spica, Regulus, Algol, ...) from the bundled catalog.", json!({
                 "type": "object",
                 "required": ["name"],
@@ -240,6 +248,7 @@ fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
         "get_return" => tool_get_return(&args)?,
         "get_events" => tool_get_events(&args)?,
         "get_star" => tool_get_star(&args)?,
+        "get_aspects" => tool_get_aspects(&args)?,
         other => return Err((-32602, format!("unknown tool: {}", other))),
     };
     // MCP wraps tool output in a `content` array of blocks.
@@ -448,6 +457,30 @@ fn tool_get_return(args: &Value) -> Result<Value, (i64, String)> {
         "return_jd": return_jd,
         "return_iso": jd2iso(return_jd),
         "delta_days": return_jd - start_jd,
+    }))
+}
+
+fn tool_get_aspects(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let orb = arg_num(args, "orb").unwrap_or(5.0);
+    if orb <= 0.0 || orb >= 30.0 {
+        return Err((-32602, "orb must be in (0, 30)".to_string()));
+    }
+    let bodies = default_transit_bodies();
+    let aspects = compute_aspects_at(jd, &bodies, orb);
+    Ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "orb": orb,
+        "aspects": aspects.iter().map(|a| json!({
+            "body_a": a.body_a,
+            "body_b": a.body_b,
+            "aspect": a.aspect_name,
+            "mode": a.aspect_mode,
+            "exact_angle": a.exact_angle,
+            "orb_distance": a.orb_distance,
+            "applying": a.applying,
+        })).collect::<Vec<_>>()
     }))
 }
 

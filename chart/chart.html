@@ -50,6 +50,17 @@
     const GLYPHS = {
       sun:"☉", moon:"☽", mercury:"☿", venus:"♀", mars:"♂",
       jupiter:"♃", saturn:"♄", uranus:"♅", neptune:"♆", pluto:"♇",
+      // Modern points
+      north_node:"☊", south_node:"☋", lilith:"⚸",
+      chiron:"⚷", ceres:"⚳", pallas:"⚴", juno:"⚵", vesta:"⚶",
+    };
+    const PLANET_COLORS = {
+      sun:"#f1c40f", moon:"#bdc3c7", mercury:"#3498db", venus:"#27ae60",
+      mars:"#e74c3c", jupiter:"#e67e22", saturn:"#7f8c8d",
+      uranus:"#16a085", neptune:"#2980b9", pluto:"#8e44ad",
+      north_node:"#95a5a6", south_node:"#95a5a6", lilith:"#34495e",
+      chiron:"#1abc9c", ceres:"#9b59b6", pallas:"#9b59b6",
+      juno:"#9b59b6", vesta:"#9b59b6",
     };
     function polar(r, deg) {
       // Astrological convention: 0° Aries on the left (the Ascendant axis),
@@ -112,15 +123,20 @@
         const [tx, ty] = polar(70, deg + 1.5);
         parts.push(`<text x=${tx} y=${ty+4} font-size=10 fill="#888">${i+1}</text>`);
       });
-      // planet glyphs
+      // planet glyphs — separate the modern/asteroid points to an inner ring
+      // so they don't visually crowd the seven traditional planets.
+      const traditional = new Set(['sun','moon','mercury','venus','mars','jupiter','saturn']);
+      const outer = new Set(['uranus','neptune','pluto']);
       Object.entries(GLYPHS).forEach(([name, glyph]) => {
         const lon = olivier[name];
         if (lon === undefined) return;
         const deg = lon * 180 / Math.PI;
-        const [x, y] = polar(200, deg);
-        parts.push(`<text x=${x} y=${y+7} font-size=22 fill="#9b59b6" text-anchor="middle">${glyph}</text>`);
+        const radius = traditional.has(name) ? 215 : (outer.has(name) ? 200 : 175);
+        const fill = PLANET_COLORS[name] || "#9b59b6";
+        const [x, y] = polar(radius, deg);
+        parts.push(`<text x=${x} y=${y+7} font-size=20 fill="${fill}" text-anchor="middle">${glyph}</text>`);
         const [lx, ly] = polar(245, deg);
-        parts.push(`<line x1=${lx} y1=${ly} x2=${lx*0.92} y2=${ly*0.92} stroke="#9b59b6"/>`);
+        parts.push(`<line x1=${lx} y1=${ly} x2=${lx*0.92} y2=${ly*0.92} stroke="${fill}" stroke-width=0.8/>`);
       });
       svg.innerHTML = parts.join("");
       // sidebar
@@ -128,7 +144,8 @@
         const lon = olivier[n];
         if (lon === undefined) return "";
         const deg = lon * 180 / Math.PI;
-        return `<div class="row"><span>${g} ${n}</span><span>${deg.toFixed(2)}°</span><span>${deg2rel(deg)}</span><span></span></div>`;
+        const color = PLANET_COLORS[n] || "#9b59b6";
+        return `<div class="row"><span style="color:${color}">${g} ${n}</span><span>${deg.toFixed(2)}°</span><span>${deg2rel(deg)}</span><span></span></div>`;
       }).join("");
       document.getElementById('planet-list').innerHTML = planetList;
       document.getElementById('house-list').innerHTML = houses.cusps.map((c, i) =>
