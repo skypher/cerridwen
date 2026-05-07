@@ -68,6 +68,8 @@ async fn main() {
         .route("/openapi.json", get(openapi_endpoint))
         .route("/docs", get(docs_endpoint))
         .route("/chart", get(chart_endpoint))
+        .route("/app", get(app_endpoint))
+        .route("/", get(app_endpoint))
         .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
         .with_state(cache);
 
@@ -384,6 +386,13 @@ fn position_stream(
 
 async fn openapi_endpoint() -> Response {
     json_ok(openapi_spec())
+}
+
+async fn app_endpoint() -> Response {
+    let html = include_str!("../../../webapp/app.html");
+    let mut resp = (StatusCode::OK, html.to_string()).into_response();
+    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp
 }
 
 async fn chart_endpoint() -> Response {

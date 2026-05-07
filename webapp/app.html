@@ -1,0 +1,1023 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Cerridwen — astro console</title>
+  <style>
+    :root {
+      --bg: #0e0e14;
+      --panel: #16161e;
+      --panel-2: #1c1c26;
+      --border: #2a2a36;
+      --fg: #e8e8ec;
+      --muted: #8a8a96;
+      --accent: #9b59b6;
+      --accent-2: #f1c40f;
+      --ok: #27ae60;
+      --err: #e74c3c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font: 14px/1.45 system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+    }
+    header {
+      display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+      padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+      background: linear-gradient(90deg, #16161e, #1f1f2c);
+    }
+    header h1 { margin: 0; font-size: 1.1rem; letter-spacing: 0.05em; }
+    header h1 span { color: var(--accent); }
+    .ctx {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;
+      margin-left: auto; font-size: 0.85rem;
+    }
+    .ctx label { display: flex; gap: 0.3rem; align-items: center; color: var(--muted); }
+    input, select, button {
+      background: var(--panel-2); color: var(--fg);
+      border: 1px solid var(--border); border-radius: 4px;
+      padding: 0.3rem 0.5rem; font: inherit;
+    }
+    input:focus, select:focus { outline: 1px solid var(--accent); }
+    button {
+      cursor: pointer; background: var(--panel-2);
+      transition: background 0.1s;
+    }
+    button:hover { background: #2a2a36; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:hover { background: #ad6cc4; }
+
+    nav.tabs {
+      display: flex; gap: 0.2rem; padding: 0 1rem;
+      border-bottom: 1px solid var(--border); background: var(--panel);
+      overflow-x: auto;
+    }
+    nav.tabs button {
+      border: none; border-bottom: 2px solid transparent;
+      background: none; color: var(--muted); border-radius: 0;
+      padding: 0.6rem 1rem; white-space: nowrap;
+    }
+    nav.tabs button.active {
+      color: var(--fg); border-bottom-color: var(--accent);
+    }
+    nav.tabs button:hover { color: var(--fg); }
+
+    main { padding: 1rem; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    .controls {
+      display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;
+      padding: 0.7rem; background: var(--panel); border-radius: 6px;
+      align-items: center;
+    }
+    .controls label { display: flex; gap: 0.3rem; align-items: center; color: var(--muted); font-size: 0.85rem; }
+    .grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+    @media (min-width: 1100px) { .grid.split { grid-template-columns: 1.6fr 1fr; } }
+
+    .card {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.8rem 1rem;
+    }
+    .card h3 { margin: 0 0 0.6rem; font-size: 1rem; color: var(--accent-2); }
+
+    .kv { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 1rem; font-family: ui-monospace, monospace; font-size: 12.5px; }
+    .kv b { color: var(--muted); font-weight: 400; }
+
+    table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+    th, td { padding: 0.3rem 0.6rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    tr:hover td { background: rgba(155, 89, 182, 0.08); }
+
+    pre.json {
+      background: var(--bg); padding: 0.7rem; border-radius: 4px;
+      overflow-x: auto; font-size: 11.5px; max-height: 400px;
+      border: 1px solid var(--border);
+    }
+    .err { color: var(--err); padding: 0.5rem; }
+    .muted { color: var(--muted); }
+    .pill {
+      display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+      background: rgba(155, 89, 182, 0.15); color: var(--accent);
+      font-size: 0.75rem; margin-right: 0.3rem;
+    }
+    .pill.applying { background: rgba(39, 174, 96, 0.18); color: #4cd47e; }
+    .pill.separating { background: rgba(231, 76, 60, 0.18); color: #ff6b6b; }
+    .pill.rx { background: rgba(231, 76, 60, 0.18); color: #ff6b6b; }
+
+    .footer {
+      padding: 1rem; text-align: center; color: var(--muted); font-size: 0.8rem;
+    }
+    .footer a { color: var(--accent); }
+
+    /* Stream tab */
+    .stream-box {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+      padding: 0.5rem; height: 240px; overflow-y: auto;
+      font-family: ui-monospace, monospace; font-size: 11.5px;
+    }
+    .stream-box .row { padding: 0.15rem 0; }
+    .stream-box .row.fade { opacity: 0.4; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>cerridwen <span>console</span></h1>
+  <div class="ctx">
+    <label>date <input id="ctx-date" type="text" placeholder="(now)" size="20"></label>
+    <label>tz <input id="ctx-tz" type="text" placeholder="UTC" size="14"></label>
+    <label>lat <input id="ctx-lat" type="number" step="0.01" size="6" style="width:80px"></label>
+    <label>lon <input id="ctx-lon" type="number" step="0.01" size="6" style="width:80px"></label>
+    <label>zodiac
+      <select id="ctx-zodiac">
+        <option value="tropical">tropical</option>
+        <option value="sidereal">sidereal</option>
+      </select>
+    </label>
+    <label id="ctx-ayan-wrap" style="display:none">ayanamsha
+      <select id="ctx-ayanamsha">
+        <option value="lahiri">Lahiri</option>
+        <option value="krishnamurti">Krishnamurti</option>
+        <option value="fagan_bradley">Fagan-Bradley</option>
+        <option value="raman">Raman</option>
+        <option value="yukteshwar">Yukteshwar</option>
+        <option value="djwhal_khul">Djwhal Khul</option>
+        <option value="j2000">J2000</option>
+      </select>
+    </label>
+    <button id="ctx-refresh" class="primary">refresh</button>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button data-tab="now" class="active">Now</button>
+  <button data-tab="chart">Chart</button>
+  <button data-tab="bodies">Bodies</button>
+  <button data-tab="houses">Houses</button>
+  <button data-tab="aspects">Aspects</button>
+  <button data-tab="transits">Transits</button>
+  <button data-tab="returns">Returns</button>
+  <button data-tab="eclipses">Eclipses</button>
+  <button data-tab="stars">Stars</button>
+  <button data-tab="events">Events</button>
+  <button data-tab="stream">Stream</button>
+  <button data-tab="raw">Raw API</button>
+</nav>
+
+<main>
+  <!-- ============================================================ NOW -->
+  <div class="panel active" id="panel-now">
+    <div class="grid split">
+      <div class="card">
+        <h3>☉ Sun</h3>
+        <div id="now-sun-kv" class="kv"></div>
+      </div>
+      <div class="card">
+        <h3>☽ Moon</h3>
+        <div id="now-moon-kv" class="kv"></div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top:1rem">
+      <div class="card">
+        <h3>Active major aspects (5° orb)</h3>
+        <div id="now-aspects"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ CHART -->
+  <div class="panel" id="panel-chart">
+    <div class="controls">
+      <label>house
+        <select id="chart-house">
+          <option value="P">Placidus</option><option value="K">Koch</option>
+          <option value="W">Whole-sign</option><option value="O">Porphyry</option>
+          <option value="R">Regiomontanus</option><option value="C">Campanus</option>
+        </select>
+      </label>
+      <span class="muted">requires latitude + longitude</span>
+    </div>
+    <div class="grid split">
+      <div class="card" style="display:flex; justify-content:center">
+        <svg id="chart-svg" width="600" height="600" viewBox="-340 -340 680 680" style="background:#000; border-radius:50%"></svg>
+      </div>
+      <div class="card">
+        <h3>Bodies</h3>
+        <div id="chart-planet-list" style="font-family:ui-monospace,monospace; font-size:12px"></div>
+        <h3 style="margin-top:1rem">Houses</h3>
+        <div id="chart-house-list" style="font-family:ui-monospace,monospace; font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ BODIES -->
+  <div class="panel" id="panel-bodies">
+    <div class="controls">
+      <label>body
+        <select id="body-name">
+          <option>sun</option><option>moon</option><option>mercury</option>
+          <option>venus</option><option>mars</option><option>jupiter</option>
+          <option>saturn</option><option>uranus</option><option>neptune</option>
+          <option>pluto</option>
+          <option>north_node</option><option>true_node</option>
+          <option>lilith</option>
+          <option>chiron</option><option>ceres</option><option>pallas</option>
+          <option>juno</option><option>vesta</option>
+        </select>
+      </label>
+      <button id="body-go">fetch</button>
+    </div>
+    <div id="body-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ HOUSES -->
+  <div class="panel" id="panel-houses">
+    <div class="controls">
+      <label>system
+        <select id="houses-system">
+          <option value="P">Placidus</option>
+          <option value="K">Koch</option>
+          <option value="W">Whole-sign</option>
+          <option value="O">Porphyry</option>
+          <option value="R">Regiomontanus</option>
+          <option value="C">Campanus</option>
+          <option value="A">Equal (Asc)</option>
+          <option value="V">Vehlow equal</option>
+          <option value="M">Morinus</option>
+          <option value="T">Topocentric</option>
+          <option value="B">Alcabitius</option>
+          <option value="Y">APC</option>
+        </select>
+      </label>
+      <button id="houses-go">compute</button>
+    </div>
+    <div id="houses-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ ASPECTS -->
+  <div class="panel" id="panel-aspects">
+    <div class="controls">
+      <label>orb (degrees) <input id="aspects-orb" type="number" value="5" min="0.1" max="29" step="0.1" style="width:70px"></label>
+      <button id="aspects-go">compute</button>
+    </div>
+    <div id="aspects-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ TRANSITS -->
+  <div class="panel" id="panel-transits">
+    <div class="controls">
+      <label>natal date <input id="transits-natal" type="text" placeholder="2000-01-01T12:00:00" size="22"></label>
+      <label>natal tz <input id="transits-natal-tz" type="text" placeholder="UTC" size="14"></label>
+      <label>orb (degrees) <input id="transits-orb" type="number" value="2" min="0.1" max="29" step="0.1" style="width:70px"></label>
+      <button id="transits-go">compute</button>
+      <span class="muted">transit moment uses the global date</span>
+    </div>
+    <div id="transits-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ RETURNS -->
+  <div class="panel" id="panel-returns">
+    <div class="controls">
+      <label>body
+        <select id="returns-body">
+          <option>Sun</option><option>Moon</option><option>Mercury</option>
+          <option>Venus</option><option>Mars</option><option>Jupiter</option>
+          <option>Saturn</option><option>Uranus</option><option>Neptune</option>
+          <option>Pluto</option><option>Chiron</option><option>Ceres</option>
+        </select>
+      </label>
+      <label>natal date <input id="returns-natal" type="text" placeholder="2000-01-01T12:00:00" size="22"></label>
+      <label>tz <input id="returns-tz" type="text" placeholder="UTC" size="14"></label>
+      <button id="returns-go">find next return</button>
+    </div>
+    <div id="returns-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ ECLIPSES -->
+  <div class="panel" id="panel-eclipses">
+    <div class="controls">
+      <label>type
+        <select id="eclipses-type">
+          <option value="both">both</option>
+          <option value="solar">solar</option>
+          <option value="lunar">lunar</option>
+        </select>
+      </label>
+      <label>lookahead (days) <input id="eclipses-lookahead" type="number" value="730" min="1" style="width:90px"></label>
+      <label>limit <input id="eclipses-limit" type="number" value="20" min="1" max="200" style="width:70px"></label>
+      <button id="eclipses-go">find</button>
+    </div>
+    <div id="eclipses-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ STARS -->
+  <div class="panel" id="panel-stars">
+    <div class="controls">
+      <label>star
+        <select id="stars-name">
+          <option>Sirius</option><option>Canopus</option><option>Arcturus</option>
+          <option>Vega</option><option>Capella</option><option>Rigel</option>
+          <option>Procyon</option><option>Achernar</option><option>Betelgeuse</option>
+          <option>Altair</option><option>Aldebaran</option><option>Spica</option>
+          <option>Antares</option><option>Pollux</option><option>Fomalhaut</option>
+          <option>Deneb</option><option>Regulus</option><option>Castor</option>
+          <option>Bellatrix</option><option>Polaris</option><option>Mirach</option>
+          <option>Algol</option>
+        </select>
+      </label>
+      <button id="stars-go">fetch</button>
+    </div>
+    <div id="stars-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ EVENTS -->
+  <div class="panel" id="panel-events">
+    <div class="controls">
+      <label>types <input id="events-types" type="text" placeholder="ingress,rx,..." size="20"></label>
+      <label>planets <input id="events-planets" type="text" placeholder="Mercury,Mars" size="20"></label>
+      <label>lookahead (days) <input id="events-lookahead" type="number" value="60" min="1" style="width:90px"></label>
+      <label>limit <input id="events-limit" type="number" value="50" min="1" max="500" style="width:70px"></label>
+      <button id="events-go">query</button>
+      <button id="events-ical">subscribe (.ics)</button>
+    </div>
+    <div id="events-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ STREAM -->
+  <div class="panel" id="panel-stream">
+    <div class="controls">
+      <label>body
+        <select id="stream-body">
+          <option>sun</option><option>moon</option><option>mercury</option>
+          <option>venus</option><option>mars</option><option>jupiter</option>
+          <option>saturn</option><option>uranus</option><option>neptune</option><option>pluto</option>
+        </select>
+      </label>
+      <label>interval (s) <input id="stream-interval" type="number" value="2" min="1" max="60" style="width:70px"></label>
+      <button id="stream-start">start</button>
+      <button id="stream-stop">stop</button>
+      <span id="stream-status" class="muted"></span>
+    </div>
+    <div class="stream-box" id="stream-box"></div>
+  </div>
+
+  <!-- ============================================================ RAW -->
+  <div class="panel" id="panel-raw">
+    <div class="controls">
+      <label>path <input id="raw-path" type="text" value="/v1/sun" style="flex:1; min-width:300px"></label>
+      <button id="raw-go">GET</button>
+      <a id="raw-openapi" href="/openapi.json" target="_blank" class="muted" style="margin-left:auto">OpenAPI ↗</a>
+      <a href="/docs" target="_blank" class="muted">Swagger ↗</a>
+    </div>
+    <div class="card">
+      <pre id="raw-out" class="json muted">// Click GET. Path can include any query params.</pre>
+    </div>
+  </div>
+</main>
+
+<div class="footer">
+  cerridwen — Swiss Ephemeris-backed astro API.
+  Source: <a href="https://github.com/skypher/cerridwen" target="_blank">github.com/skypher/cerridwen</a>.
+  This page: <code>/app</code>.
+</div>
+
+<script>
+'use strict';
+
+// =========================================================================
+// Common context (date, observer, zodiac) and URL builder
+// =========================================================================
+
+const ctx = {
+  date: () => document.getElementById('ctx-date').value.trim() || null,
+  tz:   () => document.getElementById('ctx-tz').value.trim() || null,
+  lat:  () => parseFloatOrNull(document.getElementById('ctx-lat').value),
+  lon:  () => parseFloatOrNull(document.getElementById('ctx-lon').value),
+  zodiac: () => document.getElementById('ctx-zodiac').value,
+  ayanamsha: () => document.getElementById('ctx-ayanamsha').value,
+};
+
+function parseFloatOrNull(s) {
+  if (s === undefined || s === null || s === '') return null;
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function buildQs(extra = {}) {
+  const p = new URLSearchParams();
+  if (ctx.date()) p.set('date', ctx.date());
+  if (ctx.tz()) p.set('tz', ctx.tz());
+  if (ctx.lat() !== null) p.set('latitude', ctx.lat());
+  if (ctx.lon() !== null) p.set('longitude', ctx.lon());
+  if (ctx.zodiac() === 'sidereal') {
+    p.set('zodiac', 'sidereal');
+    p.set('ayanamsha', ctx.ayanamsha());
+  }
+  for (const [k, v] of Object.entries(extra)) {
+    if (v !== null && v !== undefined && v !== '') p.set(k, v);
+  }
+  return p.toString();
+}
+
+async function api(path, qs = '') {
+  const url = path + (qs ? '?' + qs : '');
+  const r = await fetch(url);
+  const t = await r.text();
+  let j;
+  try { j = JSON.parse(t); } catch { j = t; }
+  if (!r.ok) {
+    const msg = typeof j === 'string' ? j : (j.message || JSON.stringify(j));
+    throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+  }
+  return j;
+}
+
+function showError(el, e) {
+  el.innerHTML = `<div class="err">⚠ ${e.message || e}</div>`;
+}
+
+// Sign abbreviations for compact display.
+const SIGN_ABBR = {
+  Aries:'Ari', Taurus:'Tau', Gemini:'Gem', Cancer:'Cnc', Leo:'Leo', Virgo:'Vir',
+  Libra:'Lib', Scorpio:'Sco', Sagittarius:'Sgr', Capricorn:'Cap', Aquarius:'Aqr', Pisces:'Psc',
+};
+function fmtPos(deg, sign) {
+  const inSign = ((deg % 30) + 30) % 30;
+  const d = Math.floor(inSign);
+  const m = Math.floor((inSign - d) * 60);
+  const s = Math.floor(((inSign - d) * 60 - m) * 60);
+  return `${d}° ${SIGN_ABBR[sign] || sign} ${m.toString().padStart(2,'0')}'${s.toString().padStart(2,'0')}"`;
+}
+function fmtDelta(days) {
+  const sign = days < 0 ? '-' : '';
+  const d = Math.abs(days);
+  if (d < 1/24) return `${Math.round(d*1440)}m`;
+  if (d < 1) return `${Math.round(d*24)}h ${Math.round((d*24%1)*60)}m`;
+  if (d < 365) return `${Math.floor(d)}d ${Math.round((d%1)*24)}h`;
+  return `${(d/365.25).toFixed(2)}y`;
+}
+
+// Show/hide ayanamsha when sidereal selected.
+document.getElementById('ctx-zodiac').addEventListener('change', () => {
+  document.getElementById('ctx-ayan-wrap').style.display =
+    ctx.zodiac() === 'sidereal' ? '' : 'none';
+});
+
+// =========================================================================
+// Tab switching + per-tab refresh
+// =========================================================================
+
+const tabs = document.querySelectorAll('nav.tabs button');
+tabs.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+function activate(name) {
+  tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p =>
+    p.classList.toggle('active', p.id === 'panel-' + name));
+  if (TAB_REFRESH[name]) TAB_REFRESH[name]();
+}
+
+document.getElementById('ctx-refresh').addEventListener('click', () => {
+  const active = document.querySelector('nav.tabs button.active').dataset.tab;
+  if (TAB_REFRESH[active]) TAB_REFRESH[active]();
+});
+
+// =========================================================================
+// NOW tab
+// =========================================================================
+
+async function refreshNow() {
+  const sunEl = document.getElementById('now-sun-kv');
+  const moonEl = document.getElementById('now-moon-kv');
+  const aspEl = document.getElementById('now-aspects');
+  sunEl.innerHTML = moonEl.innerHTML = aspEl.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const [sun, moon, aspects] = await Promise.all([
+      api('/v1/sun', buildQs()),
+      api('/v1/moon', buildQs()),
+      api('/v1/aspects', buildQs({ orb: 5 })),
+    ]);
+    const sp = sun.position;
+    sunEl.innerHTML = `
+      <b>position</b><span>${fmtPos(sp.absolute_degrees, sp.sign)}</span>
+      <b>longitude</b><span>${sp.absolute_degrees.toFixed(4)}°</span>
+      <b>iso</b><span>${sun.iso_date}</span>
+      <b>jd</b><span>${sun.jd.toFixed(6)}</span>
+      <b>zodiac</b><span>${sun.zodiac}${sun.ayanamsha_degrees ? ` (Δ ${sun.ayanamsha_degrees.toFixed(3)}°)` : ''}</span>
+      <b>dignity</b><span>${sun.dignity || '—'}</span>
+      ${sun.next_event ? `<b>next event</b><span>${sun.next_event.description} in ${fmtDelta(sun.next_event.delta_days)}</span>` : ''}
+    `;
+    const mp = moon.position;
+    const phase = moon.phase;
+    moonEl.innerHTML = `
+      <b>position</b><span>${fmtPos(mp.absolute_degrees, mp.sign)}</span>
+      <b>longitude</b><span>${mp.absolute_degrees.toFixed(4)}°</span>
+      <b>phase</b><span>${phase.trend} ${phase.shape}${phase.quarter_english ? ` — ${phase.quarter_english}` : ''}</span>
+      <b>illumination</b><span>${(moon.illumination*100).toFixed(1)}%</span>
+      <b>dignity</b><span>${moon.dignity || '—'}</span>
+      <b>lunation №</b><span>${moon.lunation_number}</span>
+      <b>void of course</b><span>${moon.void_of_course.is_void
+        ? `yes — until ${moon.void_of_course.until_iso}`
+        : `no — VoC starts ${moon.void_of_course.until_iso}`}</span>
+      <b>next new moon</b><span>${moon.next_new_moon.description} (${moon.next_new_moon.iso_date})</span>
+      <b>next full moon</b><span>${moon.next_full_moon.description} (${moon.next_full_moon.iso_date})</span>
+    `;
+    aspEl.innerHTML = renderAspects(aspects.aspects);
+  } catch (e) {
+    showError(sunEl, e);
+  }
+}
+
+function renderAspects(arr) {
+  if (!arr || !arr.length) return `<div class="muted">none within orb</div>`;
+  let h = `<table><thead><tr><th>body a</th><th>aspect</th><th>body b</th><th>orb</th><th>state</th></tr></thead><tbody>`;
+  for (const a of arr) {
+    h += `<tr>
+      <td>${a.body_a}</td>
+      <td>${a.aspect}${a.mode ? ` <span class="muted">${a.mode}</span>` : ''}</td>
+      <td>${a.body_b}</td>
+      <td>${a.orb_distance.toFixed(2)}°</td>
+      <td><span class="pill ${a.applying ? 'applying' : 'separating'}">${a.applying ? 'applying' : 'separating'}</span></td>
+    </tr>`;
+  }
+  h += `</tbody></table>`;
+  return h;
+}
+
+// =========================================================================
+// CHART tab — uses /v1/olivier
+// =========================================================================
+
+const SIGN_GLYPHS = ["Ari","Tau","Gem","Cnc","Leo","Vir","Lib","Sco","Sgr","Cap","Aqr","Psc"];
+const PLANET_GLYPHS = {
+  sun:"☉", moon:"☽", mercury:"☿", venus:"♀", mars:"♂",
+  jupiter:"♃", saturn:"♄", uranus:"♅", neptune:"♆", pluto:"♇",
+  north_node:"☊", south_node:"☋", lilith:"⚸",
+  chiron:"⚷", ceres:"⚳", pallas:"⚴", juno:"⚵", vesta:"⚶",
+};
+const PLANET_COLORS = {
+  sun:"#f1c40f", moon:"#bdc3c7", mercury:"#3498db", venus:"#27ae60",
+  mars:"#e74c3c", jupiter:"#e67e22", saturn:"#7f8c8d",
+  uranus:"#16a085", neptune:"#2980b9", pluto:"#8e44ad",
+  north_node:"#95a5a6", south_node:"#95a5a6", lilith:"#34495e",
+  chiron:"#1abc9c", ceres:"#9b59b6", pallas:"#9b59b6",
+  juno:"#9b59b6", vesta:"#9b59b6",
+};
+function polar(r, deg) {
+  const rad = (180 - deg) * Math.PI / 180;
+  return [r * Math.cos(rad), -r * Math.sin(rad)];
+}
+
+async function refreshChart() {
+  const planetEl = document.getElementById('chart-planet-list');
+  const houseEl = document.getElementById('chart-house-list');
+  const svg = document.getElementById('chart-svg');
+  if (ctx.lat() === null || ctx.lon() === null) {
+    planetEl.innerHTML = `<span class="muted">set latitude + longitude in the header to render houses</span>`;
+    houseEl.innerHTML = '';
+  }
+  try {
+    const olivier = await api('/v1/olivier', buildQs({
+      house_system: document.getElementById('chart-house').value
+    }));
+    const houses = ctx.lat() !== null && ctx.lon() !== null
+      ? await api('/v1/houses', buildQs({ house_system: document.getElementById('chart-house').value }))
+      : null;
+
+    const parts = [];
+    parts.push(`<circle cx=0 cy=0 r=310 fill="none" stroke="#888" stroke-width=1.5/>`);
+    parts.push(`<circle cx=0 cy=0 r=260 fill="none" stroke="#888"/>`);
+    parts.push(`<circle cx=0 cy=0 r=150 fill="none" stroke="#444"/>`);
+    parts.push(`<circle cx=0 cy=0 r=60 fill="none" stroke="#666"/>`);
+    for (let i = 0; i < 12; i++) {
+      const deg = i * 30;
+      const [x0, y0] = polar(260, deg);
+      const [x1, y1] = polar(310, deg);
+      parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="#888" stroke-width=1.2/>`);
+    }
+    for (let i = 0; i < 360; i++) {
+      if (i % 30 === 0) continue;
+      const [x0, y0] = polar(305, i);
+      const [x1, y1] = polar(260, i);
+      const w = (i % 5 === 0) ? 0.6 : 0.2;
+      parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="#666" stroke-width=${w}/>`);
+    }
+    SIGN_GLYPHS.forEach((s, i) => {
+      const [x, y] = polar(285, i * 30 + 15);
+      parts.push(`<text x=${x} y=${y+6} font-size=18 fill="#aaa" text-anchor="middle">${s}</text>`);
+    });
+    if (houses) {
+      houses.cusps.forEach((c, i) => {
+        const deg = c.absolute_degrees;
+        const [x0, y0] = polar(60, deg);
+        const [x1, y1] = polar(260, deg);
+        const ang = (i % 3 === 0);
+        parts.push(`<line x1=${x0} y1=${y0} x2=${x1} y2=${y1} stroke="${ang ? '#ddd' : '#555'}" stroke-width=${ang ? 1.5 : 0.6}/>`);
+        const [tx, ty] = polar(70, deg + 1.5);
+        parts.push(`<text x=${tx} y=${ty+4} font-size=10 fill="#888">${i+1}</text>`);
+      });
+    }
+    const traditional = new Set(['sun','moon','mercury','venus','mars','jupiter','saturn']);
+    const outer = new Set(['uranus','neptune','pluto']);
+    Object.entries(PLANET_GLYPHS).forEach(([n, g]) => {
+      const lon = olivier[n];
+      if (lon === undefined) return;
+      const deg = lon * 180 / Math.PI;
+      const r = traditional.has(n) ? 215 : (outer.has(n) ? 200 : 175);
+      const fill = PLANET_COLORS[n];
+      const [x, y] = polar(r, deg);
+      parts.push(`<text x=${x} y=${y+7} font-size=20 fill="${fill}" text-anchor="middle">${g}</text>`);
+      const [lx, ly] = polar(245, deg);
+      parts.push(`<line x1=${lx} y1=${ly} x2=${lx*0.92} y2=${ly*0.92} stroke="${fill}" stroke-width=0.8/>`);
+    });
+    svg.innerHTML = parts.join('');
+
+    planetEl.innerHTML = Object.entries(PLANET_GLYPHS).map(([n, g]) => {
+      const lon = olivier[n];
+      if (lon === undefined) return '';
+      const deg = lon * 180 / Math.PI;
+      const sign = SIGN_GLYPHS[Math.floor(deg / 30) % 12];
+      return `<div style="display:grid; grid-template-columns:30px 110px 100px 1fr; padding:0.1rem 0;">
+        <span style="color:${PLANET_COLORS[n]}; font-size:16px">${g}</span>
+        <span>${n}</span>
+        <span>${deg.toFixed(2)}°</span>
+        <span>${fmtPos(deg, sign)}</span>
+      </div>`;
+    }).join('');
+    houseEl.innerHTML = houses
+      ? houses.cusps.map((c, i) => `<div style="display:grid; grid-template-columns:60px 80px 100px 1fr; padding:0.1rem 0;">
+          <span>House ${i+1}</span>
+          <span>${c.absolute_degrees.toFixed(2)}°</span>
+          <span>${fmtPos(c.absolute_degrees, c.sign)}</span>
+          <span class="muted">${c.sign}</span>
+        </div>`).join('')
+      : '';
+  } catch (e) {
+    showError(planetEl, e);
+  }
+}
+
+// =========================================================================
+// BODIES tab
+// =========================================================================
+
+async function refreshBody() {
+  const el = document.getElementById('body-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const name = document.getElementById('body-name').value;
+    const d = await api(`/v1/body/${encodeURIComponent(name)}`, buildQs());
+    el.innerHTML = `
+      <h3>${d.name}</h3>
+      <div class="kv">
+        <b>position</b><span>${fmtPos(d.position.absolute_degrees, d.position.sign)}</span>
+        <b>longitude</b><span>${d.longitude.toFixed(6)}°</span>
+        <b>latitude</b><span>${d.latitude.toFixed(4)}°</span>
+        <b>distance</b><span>${d.distance.toFixed(4)} AU</span>
+        <b>speed</b><span>${d.speed.toFixed(4)}°/day ${d.is_rx ? '<span class="pill rx">retrograde</span>' : ''} ${d.is_stationing ? '<span class="pill">stationing</span>' : ''}</span>
+        <b>illumination</b><span>${(d.illumination*100).toFixed(2)}%</span>
+        <b>orbital period</b><span>${d.mean_orbital_period.toFixed(2)} days</span>
+        <b>v / Earth</b><span>${d.relative_orbital_velocity.toFixed(3)}× </span>
+        <b>zodiac</b><span>${d.zodiac}</span>
+        ${d.next_event ? `<b>next event</b><span>${d.next_event.description} (${d.next_event.iso_date})</span>` : ''}
+        ${d.next_rise ? `<b>next rise</b><span>${d.next_rise.iso_date}</span>` : ''}
+        ${d.next_set ? `<b>next set</b><span>${d.next_set.iso_date}</span>` : ''}
+      </div>
+      <details style="margin-top:1rem"><summary class="muted">raw json</summary>
+        <pre class="json">${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+      </details>
+    `;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// HOUSES tab
+// =========================================================================
+
+async function refreshHouses() {
+  const el = document.getElementById('houses-result');
+  if (ctx.lat() === null || ctx.lon() === null) {
+    el.innerHTML = `<div class="err">latitude and longitude required (set in header).</div>`;
+    return;
+  }
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const d = await api('/v1/houses', buildQs({
+      house_system: document.getElementById('houses-system').value
+    }));
+    let h = `<h3>${d.system_name} (${d.system_code})</h3>
+      <div class="kv">
+        <b>ascendant</b><span>${d.ascendant.toFixed(4)}° — ${fmtPos(d.ascendant, signFromDeg(d.ascendant))}</span>
+        <b>MC</b><span>${d.mc.toFixed(4)}° — ${fmtPos(d.mc, signFromDeg(d.mc))}</span>
+        <b>vertex</b><span>${d.vertex.toFixed(4)}°</span>
+        <b>equatorial asc</b><span>${d.equatorial_ascendant.toFixed(4)}°</span>
+      </div>
+      <table style="margin-top:1rem"><thead><tr><th>house</th><th>longitude</th><th>position</th><th>sign</th></tr></thead><tbody>`;
+    d.cusps.forEach((c, i) => {
+      h += `<tr><td>${i+1}</td><td>${c.absolute_degrees.toFixed(4)}°</td><td>${fmtPos(c.absolute_degrees, c.sign)}</td><td>${c.sign}</td></tr>`;
+    });
+    h += `</tbody></table>`;
+    el.innerHTML = h;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+function signFromDeg(deg) {
+  const SIGNS = ["Aries","Taurus","Gemini","Cancer","Leo","Virgo",
+                 "Libra","Scorpio","Sagittarius","Capricorn","Aquarius","Pisces"];
+  return SIGNS[Math.floor(((deg%360)+360)%360 / 30)];
+}
+
+// =========================================================================
+// ASPECTS tab
+// =========================================================================
+
+async function refreshAspects() {
+  const el = document.getElementById('aspects-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const orb = parseFloat(document.getElementById('aspects-orb').value) || 5;
+    const d = await api('/v1/aspects', buildQs({ orb }));
+    el.innerHTML = `<h3>${d.aspects.length} aspects within ${d.orb}° at ${d.iso_date}</h3>${renderAspects(d.aspects)}`;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// TRANSITS tab
+// =========================================================================
+
+document.getElementById('transits-go').addEventListener('click', refreshTransits);
+async function refreshTransits() {
+  const el = document.getElementById('transits-result');
+  const natal = document.getElementById('transits-natal').value.trim();
+  if (!natal) {
+    el.innerHTML = `<div class="err">enter a natal date.</div>`;
+    return;
+  }
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const orb = parseFloat(document.getElementById('transits-orb').value) || 2;
+    const natal_tz = document.getElementById('transits-natal-tz').value.trim();
+    const params = { natal_date: natal, orb };
+    if (natal_tz) params.tz = natal_tz;
+    if (ctx.date()) params.transit_date = ctx.date();
+    const d = await api('/v1/transits', new URLSearchParams(params).toString());
+    let h = `<h3>${d.active.length} active aspects (orb ≤ ${d.orb}°)</h3>
+      <div class="muted">natal ${d.natal_iso} → transit ${d.transit_iso}</div>
+      <table style="margin-top:1rem"><thead><tr><th>transit</th><th>aspect</th><th>natal</th><th>orb</th><th>state</th></tr></thead><tbody>`;
+    for (const t of d.active) {
+      h += `<tr>
+        <td>${t.transit_body}</td>
+        <td>${t.aspect}${t.mode ? ` <span class="muted">${t.mode}</span>` : ''}</td>
+        <td>${t.natal_body}</td>
+        <td>${t.orb_distance.toFixed(2)}°</td>
+        <td><span class="pill ${t.applying ? 'applying' : 'separating'}">${t.applying ? 'applying' : 'separating'}</span></td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+    el.innerHTML = h;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// RETURNS tab
+// =========================================================================
+
+document.getElementById('returns-go').addEventListener('click', refreshReturns);
+async function refreshReturns() {
+  const el = document.getElementById('returns-result');
+  const natal = document.getElementById('returns-natal').value.trim();
+  if (!natal) {
+    el.innerHTML = `<div class="err">enter a natal date.</div>`;
+    return;
+  }
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const params = {
+      body: document.getElementById('returns-body').value,
+      natal_date: natal,
+    };
+    const tz = document.getElementById('returns-tz').value.trim();
+    if (tz) params.tz = tz;
+    if (ctx.date()) params.start_date = ctx.date();
+    const d = await api('/v1/return', new URLSearchParams(params).toString());
+    el.innerHTML = `
+      <h3>Next ${d.body} return</h3>
+      <div class="kv">
+        <b>natal</b><span>${d.natal_iso} (longitude ${d.natal_longitude.toFixed(4)}°)</span>
+        <b>return</b><span>${d.return_iso}</span>
+        <b>delta</b><span>${fmtDelta(d.delta_days)}</span>
+        <b>jd</b><span>${d.return_jd.toFixed(6)}</span>
+      </div>
+    `;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// ECLIPSES tab
+// =========================================================================
+
+document.getElementById('eclipses-go').addEventListener('click', refreshEclipses);
+async function refreshEclipses() {
+  const el = document.getElementById('eclipses-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const params = {
+      type: document.getElementById('eclipses-type').value,
+      lookahead: document.getElementById('eclipses-lookahead').value,
+      limit: document.getElementById('eclipses-limit').value,
+    };
+    if (ctx.date()) params.date_start = ctx.date();
+    if (ctx.tz()) params.tz = ctx.tz();
+    const list = await api('/v1/eclipses', new URLSearchParams(params).toString());
+    if (!list.length) {
+      el.innerHTML = `<div class="muted">no eclipses in range.</div>`;
+      return;
+    }
+    let h = `<h3>${list.length} eclipses</h3>
+      <table><thead><tr><th>kind</th><th>maximum</th><th>first contact</th><th>last contact</th><th>central</th></tr></thead><tbody>`;
+    for (const e of list) {
+      h += `<tr>
+        <td><span class="pill">${e.kind}</span></td>
+        <td>${e.max_iso}</td>
+        <td class="muted">${e.first_contact_iso || '—'}</td>
+        <td class="muted">${e.last_contact_iso || '—'}</td>
+        <td>${e.central ? '✓' : ''}</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+    el.innerHTML = h;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// STARS tab
+// =========================================================================
+
+document.getElementById('stars-go').addEventListener('click', refreshStars);
+async function refreshStars() {
+  const el = document.getElementById('stars-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const name = document.getElementById('stars-name').value;
+    const d = await api(`/v1/star/${encodeURIComponent(name)}`, buildQs());
+    el.innerHTML = `
+      <h3>${d.name}</h3>
+      <div class="kv">
+        <b>position</b><span>${fmtPos(d.position.absolute_degrees, d.position.sign)}</span>
+        <b>longitude</b><span>${d.longitude.toFixed(6)}°</span>
+        <b>ecliptic latitude</b><span>${d.ecliptic_latitude.toFixed(4)}°</span>
+        <b>magnitude</b><span>${d.magnitude}</span>
+        <b>zodiac</b><span>${d.zodiac}</span>
+      </div>
+    `;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// EVENTS tab
+// =========================================================================
+
+document.getElementById('events-go').addEventListener('click', refreshEvents);
+document.getElementById('events-ical').addEventListener('click', () => {
+  const params = {
+    types: document.getElementById('events-types').value,
+    planets: document.getElementById('events-planets').value,
+    lookahead: document.getElementById('events-lookahead').value,
+  };
+  if (ctx.date()) params.date_start = ctx.date();
+  if (ctx.tz()) params.tz = ctx.tz();
+  const url = '/v1/events.ics?' + new URLSearchParams(params).toString();
+  window.location.href = url;
+});
+
+async function refreshEvents() {
+  const el = document.getElementById('events-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const params = {
+      types: document.getElementById('events-types').value,
+      planets: document.getElementById('events-planets').value,
+      lookahead: document.getElementById('events-lookahead').value,
+      limit: document.getElementById('events-limit').value,
+    };
+    if (ctx.date()) params.date_start = ctx.date();
+    if (ctx.tz()) params.tz = ctx.tz();
+    const list = await api('/v1/events', new URLSearchParams(params).toString());
+    if (!list.length) {
+      el.innerHTML = `<div class="muted">no events. (the events DB needs to be populated first via cerridwen-event-generator and CERRIDWEN_EVENTS_DB env var.)</div>`;
+      return;
+    }
+    let h = `<h3>${list.length} events</h3>
+      <table><thead><tr><th>date</th><th>type</th><th>planet</th><th>data</th></tr></thead><tbody>`;
+    for (const e of list) {
+      h += `<tr>
+        <td>${e.iso_date}</td>
+        <td><span class="pill">${e.type}${e.subtype ? ' ' + e.subtype : ''}</span></td>
+        <td>${e.planet}</td>
+        <td>${e.data}</td>
+      </tr>`;
+    }
+    h += `</tbody></table>`;
+    el.innerHTML = h;
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+// =========================================================================
+// STREAM tab
+// =========================================================================
+
+let streamSource = null;
+const streamBox = document.getElementById('stream-box');
+
+document.getElementById('stream-start').addEventListener('click', () => {
+  if (streamSource) streamSource.close();
+  const body = document.getElementById('stream-body').value;
+  const interval = document.getElementById('stream-interval').value;
+  const url = `/v1/stream/body/${body}?interval=${interval}`;
+  streamSource = new EventSource(url);
+  streamSource.addEventListener('position', (ev) => {
+    const d = JSON.parse(ev.data);
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.textContent = `${d.iso_date}  ${d.body.padEnd(8)}  ${d.longitude.toFixed(4)}°  speed=${d.speed.toFixed(5)}/day  ${d.is_rx ? '℞' : ' '}`;
+    streamBox.prepend(row);
+    while (streamBox.children.length > 100) streamBox.removeChild(streamBox.lastChild);
+    Array.from(streamBox.children).slice(20).forEach(r => r.classList.add('fade'));
+  });
+  streamSource.onerror = () => {
+    document.getElementById('stream-status').textContent = '(connection error)';
+  };
+  document.getElementById('stream-status').textContent = `streaming ${body} every ${interval}s`;
+});
+
+document.getElementById('stream-stop').addEventListener('click', () => {
+  if (streamSource) {
+    streamSource.close();
+    streamSource = null;
+    document.getElementById('stream-status').textContent = '(stopped)';
+  }
+});
+
+// =========================================================================
+// RAW tab
+// =========================================================================
+
+document.getElementById('raw-go').addEventListener('click', async () => {
+  const el = document.getElementById('raw-out');
+  el.classList.remove('muted');
+  el.textContent = 'loading…';
+  try {
+    const path = document.getElementById('raw-path').value;
+    const r = await fetch(path);
+    const t = await r.text();
+    let pretty = t;
+    try { pretty = JSON.stringify(JSON.parse(t), null, 2); } catch {}
+    el.textContent = `HTTP ${r.status} ${r.statusText}\nx-cache: ${r.headers.get('x-cache') || '-'}\n\n` + pretty;
+  } catch (e) {
+    el.textContent = String(e);
+  }
+});
+
+// =========================================================================
+// helpers + bindings
+// =========================================================================
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+document.getElementById('body-go').addEventListener('click', refreshBody);
+document.getElementById('houses-go').addEventListener('click', refreshHouses);
+document.getElementById('aspects-go').addEventListener('click', refreshAspects);
+
+const TAB_REFRESH = {
+  now: refreshNow,
+  chart: refreshChart,
+  bodies: refreshBody,
+  houses: refreshHouses,
+  aspects: refreshAspects,
+  // transits/returns/eclipses/stars/events/stream/raw all initiate on user action
+};
+
+// initial load
+refreshNow();
+</script>
+</body>
+</html>
