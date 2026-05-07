@@ -20,10 +20,10 @@ use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    compute_transits, default_transit_bodies, eclipses_within_period, jd2iso, jd_now, next_return,
-    parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems,
-    ActiveTransit, ASPECTS, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData,
-    PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
+    compute_transits, default_transit_bodies, eclipses_within_period, fixed_star, jd2iso, jd_now,
+    next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
+    valid_house_systems, ActiveTransit, ASPECTS, Eclipse, Houses, LatLong, MoonData,
+    MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -60,6 +60,7 @@ async fn main() {
         .route("/v1/transits", get(transits_endpoint))
         .route("/v1/events.ics", get(events_ics_endpoint))
         .route("/v1/return", get(return_endpoint))
+        .route("/v1/star/:name", get(star_endpoint))
         .route("/v1/stream/sun", get(stream_sun_endpoint))
         .route("/v1/stream/moon", get(stream_moon_endpoint))
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
@@ -490,6 +491,18 @@ fn openapi_spec() -> Value {
                     "responses": { "200": { "description": "Active aspects" } }
                 }
             },
+            "/v1/star/{name}": {
+                "get": {
+                    "summary": "Fixed star position from the bundled sefstars.txt catalog",
+                    "parameters": json!([
+                        {"name": "name", "in": "path", "required": true,
+                         "description": "Star name (Sirius, Vega, Spica, Regulus, Algol, ...) or Bayer designation",
+                         "schema": {"type": "string"}},
+                        date_param, tz_param, zodiac_param, ayan_param,
+                    ]),
+                    "responses": { "200": { "description": "Star data" }, "404": { "description": "Unknown star" } }
+                }
+            },
             "/v1/return": {
                 "get": {
                     "summary": "Next solar/lunar/planetary return",
@@ -544,6 +557,48 @@ fn openapi_spec() -> Value {
             },
         }
     })
+}
+
+async fn star_endpoint(
+    AxumPath(name): AxumPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let (jd_opt, _latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+
+    let star = match fixed_star(&name, jd) {
+        Ok(s) => s,
+        Err(e) if e.contains("not found") || e.contains("not contained") => {
+            return not_found(&format!("unknown star: {} ({})", name, e));
+        }
+        Err(e) => {
+            return bad_request(&format!("fixstar lookup failed: {}", e));
+        }
+    };
+
+    let (ayan, ayan_name) = match parse_zodiac(&q, jd) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let lon = if ayan != 0.0 { apply_ayanamsha(star.longitude, ayan) } else { star.longitude };
+    let pos = PlanetLongitude::new(lon);
+
+    json_ok(json!({
+        "name": star.name,
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "zodiac": ayan_name,
+        "ayanamsha_degrees": if ayan != 0.0 { Some(ayan) } else { None },
+        "position": planet_longitude_to_json(&pos),
+        "longitude": lon,
+        "ecliptic_latitude": star.latitude,
+        "distance_au": star.distance,
+        "speed": star.speed,
+        "magnitude": star.magnitude,
+    }))
 }
 
 async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {

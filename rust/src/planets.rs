@@ -1401,6 +1401,77 @@ pub fn compute_transits(
 }
 
 // ------------------------------------------------------------------------------------------------
+// Fixed stars — wraps swe_fixstar_ut for any star defined in the bundled
+// sefstars.txt catalog. Star names are looked up case-insensitively against
+// the traditional name (e.g. "Sirius") or Bayer/Flamsteed designation
+// (e.g. "alCMa").
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone, Debug)]
+pub struct FixedStar {
+    pub name: String,
+    pub longitude: f64,
+    pub latitude: f64,
+    pub distance: f64,
+    pub speed: f64,
+    pub magnitude: f64,
+}
+
+/// Fetch ecliptic longitude, latitude, magnitude, etc. for a named star.
+/// Returns `Err` with the SwissEph error string if the star isn't in the
+/// catalog or the file isn't present.
+pub fn fixed_star(name: &str, jd_ut: f64) -> Result<FixedStar, String> {
+    init_swe();
+    let mut star_buf = [0_i8; 256];
+    // Copy the input name into the buffer; SwissEph rewrites it with the
+    // canonical "trad_name,bayer" form on success.
+    let bytes = name.as_bytes();
+    let n = bytes.len().min(star_buf.len() - 1);
+    for i in 0..n {
+        star_buf[i] = bytes[i] as i8;
+    }
+    star_buf[n] = 0;
+
+    let mut xx = [0.0_f64; 6];
+    let mut serr = [0_i8; 256];
+    let mut mag: f64 = f64::NAN;
+    unsafe {
+        let code = raw::swe_fixstar_ut(
+            star_buf.as_mut_ptr(),
+            jd_ut,
+            (SEFLG_SWIEPH | SEFLG_SPEED) as i32,
+            xx.as_mut_ptr(),
+            serr.as_mut_ptr(),
+        );
+        if code < 0 {
+            let err = std::ffi::CStr::from_ptr(serr.as_ptr())
+                .to_string_lossy().into_owned();
+            return Err(err);
+        }
+        // Magnitude lookup is a separate call.
+        let mut mag_serr = [0_i8; 256];
+        let _mcode = raw::swe_fixstar_mag(
+            star_buf.as_mut_ptr(),
+            &mut mag,
+            mag_serr.as_mut_ptr(),
+        );
+    }
+    // Decode the canonical name from star_buf.
+    let canonical = unsafe {
+        std::ffi::CStr::from_ptr(star_buf.as_ptr())
+            .to_string_lossy().into_owned()
+    };
+    Ok(FixedStar {
+        name: canonical,
+        longitude: xx[0],
+        latitude: xx[1],
+        distance: xx[2],
+        speed: xx[3],
+        magnitude: mag,
+    })
+}
+
+// ------------------------------------------------------------------------------------------------
 // Sidereal zodiac / ayanamshas
 // ------------------------------------------------------------------------------------------------
 

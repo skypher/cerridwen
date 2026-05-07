@@ -11,10 +11,10 @@ use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     apply_ayanamsha, compute_ayanamsha, compute_houses, compute_moon_data_with, compute_sun_data,
-    compute_transits, default_transit_bodies, eclipses_within_period, jd2iso, jd_now, next_return,
-    parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, ActiveTransit, Eclipse,
-    Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData,
-    VoidOfCourseData,
+    compute_transits, default_transit_bodies, eclipses_within_period, fixed_star, jd2iso, jd_now,
+    next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz, ActiveTransit,
+    Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude,
+    SunData, VoidOfCourseData,
 };
 use serde_json::{json, Value};
 
@@ -190,6 +190,17 @@ fn tools_list() -> Value {
                     "tz":         { "type": "string" }
                 }
             })),
+            tool_def("get_star", "Fixed-star position (Sirius, Vega, Spica, Regulus, Algol, ...) from the bundled catalog.", json!({
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": { "type": "string", "description": "Sirius, Vega, Spica, Regulus, Algol, Polaris, Aldebaran, Antares, ..." },
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" },
+                    "zodiac": { "type": "string" },
+                    "ayanamsha": { "type": "string" }
+                }
+            })),
             tool_def("get_events", "Database-backed events (aspects, ingresses, retrogrades). Requires CERRIDWEN_EVENTS_DB env var.", json!({
                 "type": "object",
                 "properties": {
@@ -228,6 +239,7 @@ fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
         "get_transits" => tool_get_transits(&args)?,
         "get_return" => tool_get_return(&args)?,
         "get_events" => tool_get_events(&args)?,
+        "get_star" => tool_get_star(&args)?,
         other => return Err((-32602, format!("unknown tool: {}", other))),
     };
     // MCP wraps tool output in a `content` array of blocks.
@@ -436,6 +448,29 @@ fn tool_get_return(args: &Value) -> Result<Value, (i64, String)> {
         "return_jd": return_jd,
         "return_iso": jd2iso(return_jd),
         "delta_days": return_jd - start_jd,
+    }))
+}
+
+fn tool_get_star(args: &Value) -> Result<Value, (i64, String)> {
+    let name = arg_str(args, "name")
+        .ok_or((-32602, "name is required".to_string()))?;
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let star = fixed_star(name, jd).map_err(|e| (-32603, e))?;
+    let (ayan, ayan_name) = parse_zodiac(args, jd)?;
+    let lon = if ayan != 0.0 { apply_ayanamsha(star.longitude, ayan) } else { star.longitude };
+    let pos = PlanetLongitude::new(lon);
+    Ok(json!({
+        "name": star.name,
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "zodiac": ayan_name,
+        "ayanamsha_degrees": if ayan != 0.0 { Some(ayan) } else { None },
+        "position": planet_longitude_to_json(&pos),
+        "longitude": lon,
+        "ecliptic_latitude": star.latitude,
+        "distance_au": star.distance,
+        "speed": star.speed,
+        "magnitude": star.magnitude,
     }))
 }
 
