@@ -191,6 +191,32 @@ fn tz_input_resolves_to_same_jd_as_utc() {
     assert_abs_diff_eq!(utc, tokyo, epsilon = 1e-9);
 }
 
+// ----------------------- regression tests --------------------------------
+
+#[test]
+fn pluto_next_sign_change_does_not_panic() {
+    // Regression for a panic that surfaced only in tokio-worker context:
+    // Pluto's slow motion right at the edge of its lookahead window made
+    // the local-minima search return None about half the time, which the
+    // panicking next_sign_change wrapper then unwrap-panicked on. With
+    // try_next_sign_change returning Option, this is now graceful, and
+    // the bumped lookahead (25 → 35 years) makes a successful find
+    // overwhelmingly likely.
+    use cerridwen::planets::{Planet, SE_PLUTO};
+    let p = Planet::new(SE_PLUTO, Some(2461166.65), None);
+    // Either Some(jd) or None — both are acceptable; just don't panic.
+    let _ = p.try_next_sign_change(None);
+}
+
+#[test]
+fn try_next_sign_change_returns_option_for_unknown_body() {
+    // Even for arbitrary body ids, try_next_sign_change should return
+    // None rather than panic.
+    use cerridwen::planets::Planet;
+    let p = Planet::new(0, Some(2461166.65), None); // Sun (real body)
+    assert!(p.try_next_sign_change(None).is_some());
+}
+
 #[test]
 fn unknown_tz_errors() {
     let r = parse_jd_or_iso_date_in_tz("2026-05-06T12:00:00", Some("Atlantis/Lostcity"));

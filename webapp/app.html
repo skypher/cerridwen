@@ -286,7 +286,9 @@
           <option>Sun</option><option>Moon</option><option>Mercury</option>
           <option>Venus</option><option>Mars</option><option>Jupiter</option>
           <option>Saturn</option><option>Uranus</option><option>Neptune</option>
-          <option>Pluto</option><option>Chiron</option><option>Ceres</option>
+          <option>Pluto</option><option>Chiron</option>
+          <option>Ceres</option><option>Pallas</option>
+          <option>Juno</option><option>Vesta</option>
         </select>
       </label>
       <label>natal date <input id="returns-natal" type="text" placeholder="2000-01-01T12:00:00" size="22"></label>
@@ -476,6 +478,17 @@ function activate(name) {
   tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.panel').forEach(p =>
     p.classList.toggle('active', p.id === 'panel-' + name));
+  // Close any open SSE stream when leaving the Stream tab — otherwise the
+  // EventSource keeps consuming bandwidth in the background.
+  if (name !== 'stream' && streamSource) {
+    streamSource.close();
+    streamSource = null;
+    document.getElementById('stream-status').textContent = '(stopped — left tab)';
+  }
+  // Update URL hash so deep links and the back button work.
+  if (location.hash !== '#' + name) {
+    history.replaceState(null, '', '#' + name);
+  }
   if (TAB_REFRESH[name]) TAB_REFRESH[name]();
 }
 
@@ -902,7 +915,15 @@ document.getElementById('events-ical').addEventListener('click', () => {
   if (ctx.date()) params.date_start = ctx.date();
   if (ctx.tz()) params.tz = ctx.tz();
   const url = '/v1/events.ics?' + new URLSearchParams(params).toString();
-  window.location.href = url;
+  // Trigger a save dialog rather than navigating away from the app — the
+  // iCal feed is meant to be subscribed to, not browsed inline.
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cerridwen-events.ics';
+  a.target = '_blank';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 });
 
 async function refreshEvents() {
@@ -1016,8 +1037,24 @@ const TAB_REFRESH = {
   // transits/returns/eclipses/stars/events/stream/raw all initiate on user action
 };
 
-// initial load
-refreshNow();
+// Hash-based deep linking + back-button support.
+function tabFromHash() {
+  const h = (location.hash || '').replace(/^#/, '');
+  const valid = ['now','chart','bodies','houses','aspects','transits','returns','eclipses','stars','events','stream','raw'];
+  return valid.includes(h) ? h : null;
+}
+window.addEventListener('hashchange', () => {
+  const t = tabFromHash();
+  if (t) activate(t);
+});
+
+// initial load: honour the hash if present, otherwise default to Now.
+const initialTab = tabFromHash() || 'now';
+if (initialTab !== 'now') {
+  activate(initialTab);
+} else {
+  refreshNow();
+}
 </script>
 </body>
 </html>
