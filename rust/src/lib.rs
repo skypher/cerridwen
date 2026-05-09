@@ -20,13 +20,13 @@ pub mod utils;
 
 pub use crate::defs::{Aspect, ASPECTS, SIGNS, SIGN_RELATED_ASPECTS, TRADITIONAL_MAJOR_ASPECTS};
 pub use crate::planets::{
-    apply_ayanamsha, compute_aspects_at, compute_ayanamsha, compute_houses, compute_transits,
-    default_transit_bodies, eclipses_within_period, fixed_star, next_eclipse, next_return,
-    parse_ayanamsha, parse_house_system, valid_house_systems, ActiveTransit, Ascendant, Body,
-    Ceres, Chiron, Eclipse, EclipseKind, EclipseSearch, FixedStar, FixedZodiacPoint, Houses,
-    InstantAspect, Jupiter, Juno, Lilith, Mars, MeanNode, Mercury, Moon, MoonPhaseData, Neptune,
-    Pallas, Planet, PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun, TrueNode, Uranus, Venus,
-    Vesta,
+    angle_points, apply_ayanamsha, compute_aspects_at, compute_aspects_extended,
+    compute_ayanamsha, compute_houses, compute_transits, default_transit_bodies,
+    eclipses_within_period, fixed_star, next_eclipse, next_return, parse_ayanamsha,
+    parse_house_system, valid_house_systems, ActiveTransit, Ascendant, Body, Ceres, Chiron,
+    Eclipse, EclipseKind, EclipseSearch, FixedStar, FixedZodiacPoint, Houses, InstantAspect,
+    Jupiter, Juno, Lilith, Mars, MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet,
+    PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,
 };
 pub use crate::utils::{
     angle_to_aspect_name, aspect_name_to_angle, days_frac_to_dhms, iso2jd, jd2iso, jd_now,

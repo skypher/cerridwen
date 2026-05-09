@@ -1526,25 +1526,41 @@ pub struct InstantAspect {
 }
 
 pub fn compute_aspects_at(jd: f64, bodies: &[i32], orb: f64) -> Vec<InstantAspect> {
+    compute_aspects_extended(jd, bodies, &[], orb)
+}
+
+/// Like `compute_aspects_at`, but allows arbitrary named extra points
+/// (e.g. Ascendant, Midheaven, fixed stars) to participate in the grid.
+/// Each extra point is `(name, longitude_at_jd, longitude_at_jd+1h)` —
+/// the second longitude is used to discriminate applying vs separating.
+pub fn compute_aspects_extended(
+    jd: f64,
+    bodies: &[i32],
+    extras: &[(String, f64, f64)],
+    orb: f64,
+) -> Vec<InstantAspect> {
     init_swe();
     let aspects = major_aspects();
     let dt = 1.0 / 24.0;
-    let lon: Vec<f64> = bodies.iter()
-        .map(|&id| swe::calc_ut(jd, id as u32, SEFLG_SWIEPH as u32)
-            .map(|r| r.out[0]).unwrap_or(f64::NAN))
-        .collect();
-    let lon_next: Vec<f64> = bodies.iter()
-        .map(|&id| swe::calc_ut(jd + dt, id as u32, SEFLG_SWIEPH as u32)
-            .map(|r| r.out[0]).unwrap_or(f64::NAN))
-        .collect();
+
+    // Materialise (name, lon_now, lon_next) for every participant.
+    let mut points: Vec<(String, f64, f64)> = Vec::with_capacity(bodies.len() + extras.len());
+    for &id in bodies {
+        let now = swe::calc_ut(jd, id as u32, SEFLG_SWIEPH as u32)
+            .map(|r| r.out[0]).unwrap_or(f64::NAN);
+        let next = swe::calc_ut(jd + dt, id as u32, SEFLG_SWIEPH as u32)
+            .map(|r| r.out[0]).unwrap_or(f64::NAN);
+        points.push((swe::get_planet_name(id), now, next));
+    }
+    for (name, now, next) in extras {
+        points.push((name.clone(), *now, *next));
+    }
 
     let mut out = Vec::new();
-    for i in 0..bodies.len() {
-        for j in (i + 1)..bodies.len() {
-            let a = lon[i];
-            let b = lon[j];
-            let an = lon_next[i];
-            let bn = lon_next[j];
+    for i in 0..points.len() {
+        for j in (i + 1)..points.len() {
+            let (na, a, an) = (&points[i].0, points[i].1, points[i].2);
+            let (nb, b, bn) = (&points[j].0, points[j].1, points[j].2);
             let angle = (a - b).rem_euclid(360.0);
             let angle_next = (an - bn).rem_euclid(360.0);
             for &(target, name, mode) in aspects {
@@ -1552,8 +1568,8 @@ pub fn compute_aspects_at(jd: f64, bodies: &[i32], orb: f64) -> Vec<InstantAspec
                 if dist <= orb {
                     let dist_next = mod360_distance(angle_next, target);
                     out.push(InstantAspect {
-                        body_a: swe::get_planet_name(bodies[i]),
-                        body_b: swe::get_planet_name(bodies[j]),
+                        body_a: na.clone(),
+                        body_b: nb.clone(),
                         aspect_name: name,
                         aspect_mode: mode,
                         exact_angle: target,
@@ -1566,6 +1582,23 @@ pub fn compute_aspects_at(jd: f64, bodies: &[i32], orb: f64) -> Vec<InstantAspec
     }
     out.sort_by(|a, b| a.orb_distance.partial_cmp(&b.orb_distance).unwrap());
     out
+}
+
+/// Convenience: build the (name, lon_now, lon_next) triples for the
+/// Ascendant and Midheaven for a given moment + observer + house system.
+pub fn angle_points(
+    jd: f64,
+    lat: f64,
+    long: f64,
+    house_system: char,
+) -> [(String, f64, f64); 2] {
+    let dt = 1.0 / 24.0;
+    let h = compute_houses(jd, lat, long, house_system);
+    let h_next = compute_houses(jd + dt, lat, long, house_system);
+    [
+        ("Ascendant".to_string(), h.ascendant, h_next.ascendant),
+        ("Midheaven".to_string(), h.mc, h_next.mc),
+    ]
 }
 
 // ------------------------------------------------------------------------------------------------

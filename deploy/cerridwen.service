@@ -1,0 +1,32 @@
+[Unit]
+Description=Cerridwen astro API server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cerridwen
+Group=cerridwen
+WorkingDirectory=/opt/cerridwen
+Environment=CERRIDWEN_EPHE_PATH=/opt/cerridwen/sweph
+Environment=RUST_LOG=info
+ExecStart=/opt/cerridwen/cerridwen-server --port 2828
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — adjust as needed.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/cerridwen
+ReadWritePaths=/var/lib/cerridwen
+CapabilityBoundingSet=
+RestrictNamespaces=true
+RestrictRealtime=true
+SystemCallFilter=@system-service
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

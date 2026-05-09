@@ -19,11 +19,12 @@ use std::convert::Infallible;
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
-    apply_ayanamsha, compute_aspects_at, compute_ayanamsha, compute_houses, compute_moon_data_with,
-    compute_sun_data, compute_transits, default_transit_bodies, eclipses_within_period, fixed_star,
-    jd2iso, jd_now, next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
-    valid_house_systems, ActiveTransit, ASPECTS, Eclipse, Houses, InstantAspect, LatLong, MoonData,
-    MoonOptions, MoonPhaseData, PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
+    angle_points, apply_ayanamsha, compute_aspects_extended, compute_ayanamsha, compute_houses,
+    compute_moon_data_with, compute_sun_data, compute_transits, default_transit_bodies,
+    eclipses_within_period, fixed_star, jd2iso, jd_now, next_return, parse_ayanamsha,
+    parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems, ActiveTransit, ASPECTS,
+    Eclipse, Houses, InstantAspect, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent,
+    PlanetLongitude, SunData, VoidOfCourseData,
 };
 use clap::Parser;
 use serde_json::{json, Value};
@@ -40,6 +41,15 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    // Structured logging — RUST_LOG=info,cerridwen_server=debug or similar.
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_target(false)
+        .init();
+
     let args = Args::parse();
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
@@ -49,6 +59,13 @@ async fn main() {
     }
 
     let cache = Arc::new(ResponseCache::new(Duration::from_secs(10)));
+    // 60 requests per 10 seconds per client — generous for normal use,
+    // tight enough to bound abuse on the expensive search endpoints.
+    let rate_limiter = RateLimiter::new(Duration::from_secs(10), 60);
+    let cors = tower_http::cors::CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([axum::http::Method::GET, axum::http::Method::OPTIONS])
+        .allow_headers(tower_http::cors::Any);
     let app = Router::new()
         .route("/v1/sun", get(sun_endpoint))
         .route("/v1/moon", get(moon_endpoint))
@@ -71,11 +88,16 @@ async fn main() {
         .route("/app", get(app_endpoint))
         .route("/", get(app_endpoint))
         .route("/favicon.ico", get(favicon_endpoint))
+        .route("/health", get(health_endpoint))
+        .route("/metrics", get(metrics_endpoint))
         .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
+        .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
+        .layer(tower_http::trace::TraceLayer::new_for_http())
+        .layer(cors)
         .with_state(cache);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-    println!("Starting Cerridwen API server on port {}.", args.port);
+    tracing::info!(port = args.port, version = env!("CARGO_PKG_VERSION"), "starting cerridwen-server");
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -163,9 +185,22 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     };
     let jd = jd_opt.unwrap_or_else(jd_now);
 
+    // Sidereal mode applies an ayanamsha shift to all body longitudes.
+    let (ayan, ayan_name) = match parse_zodiac(&q, jd) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let shift = |lon_deg: f64| -> f64 {
+        if ayan != 0.0 { apply_ayanamsha(lon_deg, ayan) } else { lon_deg }
+    };
+
     let mut result = serde_json::Map::new();
     result.insert("jd".into(), json!(jd));
     result.insert("iso_date".into(), json!(jd2iso(jd)));
+    result.insert("zodiac".into(), json!(ayan_name));
+    if ayan != 0.0 {
+        result.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
 
     let bodies: Vec<(&str, Box<dyn Body>)> = vec![
         ("sun", Box::new(Sun::at_jd(jd))),
@@ -179,8 +214,26 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         ("neptune", Box::new(Neptune::at_jd(jd))),
         ("pluto", Box::new(Pluto::at_jd(jd))),
     ];
+    // Track which bodies are retrograde so the chart can show ℞ markers.
+    let mut rx = serde_json::Map::new();
     for (name, body) in bodies {
-        result.insert(name.into(), json!(body.longitude(jd).to_radians()));
+        result.insert(name.into(), json!(shift(body.longitude(jd)).to_radians()));
+    }
+    // Speeds for the ten classic bodies + extras. Re-fetch via Planet so we
+    // can read the speed component without touching the trait dispatch.
+    use cerridwen::planets::{
+        SE_JUPITER, SE_MARS, SE_MERCURY, SE_MOON, SE_NEPTUNE, SE_PLUTO, SE_SATURN, SE_SUN,
+        SE_URANUS, SE_VENUS,
+    };
+    let classic_ids: &[(&str, i32)] = &[
+        ("sun", SE_SUN), ("moon", SE_MOON), ("mercury", SE_MERCURY),
+        ("venus", SE_VENUS), ("mars", SE_MARS), ("jupiter", SE_JUPITER),
+        ("saturn", SE_SATURN), ("uranus", SE_URANUS), ("neptune", SE_NEPTUNE),
+        ("pluto", SE_PLUTO),
+    ];
+    for (name, id) in classic_ids {
+        let p = Planet::new(*id, Some(jd), None);
+        rx.insert((*name).into(), json!(p.is_rx(None)));
     }
 
     // Extras: lunar nodes, Lilith, Chiron, the four asteroids — fetched
@@ -200,9 +253,13 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     ];
     for (name, id) in extras {
         let p = Planet::new(*id, Some(jd), None);
-        result.insert((*name).into(), json!(p.longitude_at(jd).to_radians()));
+        result.insert((*name).into(), json!(shift(p.longitude_at(jd)).to_radians()));
+        if p.has_rx_stations() {
+            rx.insert((*name).into(), json!(p.is_rx(None)));
+        }
     }
-    // Convenience: south_node opposes north_node by 180°.
+    result.insert("retrograde".into(), Value::Object(rx));
+    // south_node opposes north_node by 180° in either zodiac.
     if let Some(nn) = result.get("north_node").and_then(|v| v.as_f64()) {
         let sn = (nn + std::f64::consts::PI) % (2.0 * std::f64::consts::PI);
         result.insert("south_node".into(), json!(sn));
@@ -217,7 +274,11 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
             None => 'P',
         };
         let h = compute_houses(jd, ll.lat, ll.long, system);
-        let cusps_rad: Vec<f64> = h.cusps.iter().map(|c| c.to_radians()).collect();
+        // House cusps are tropical by construction; shift them along with
+        // the bodies when sidereal mode is selected.
+        let cusps_rad: Vec<f64> = h.cusps.iter()
+            .map(|c| shift(*c).to_radians())
+            .collect();
         result.insert("houses".into(), json!(cusps_rad));
         result.insert("house_system".into(), json!(h.system_code.to_string()));
     }
@@ -243,11 +304,18 @@ struct CachedResponse {
 struct ResponseCache {
     inner: RwLock<HashMap<String, CachedResponse>>,
     ttl: Duration,
+    /// Hard upper bound on the number of cached entries. When exceeded,
+    /// the oldest-expiring entries are evicted until the cap is met.
+    capacity: usize,
 }
 
 impl ResponseCache {
     fn new(ttl: Duration) -> Self {
-        Self { inner: RwLock::new(HashMap::new()), ttl }
+        Self {
+            inner: RwLock::new(HashMap::new()),
+            ttl,
+            capacity: 1024,
+        }
     }
     async fn get(&self, key: &str) -> Option<CachedResponse> {
         let g = self.inner.read().await;
@@ -256,12 +324,24 @@ impl ResponseCache {
             _ => None,
         }
     }
+    async fn len(&self) -> usize {
+        self.inner.read().await.len()
+    }
     async fn set(&self, key: String, body: Vec<u8>, content_type: String) {
         let mut g = self.inner.write().await;
-        // Opportunistic cleanup of expired entries when the map grows.
-        if g.len() > 256 {
-            let now = Instant::now();
-            g.retain(|_, v| v.expires_at > now);
+        // Drop expired entries first, then enforce the hard cap by evicting
+        // the entries with the earliest expiry until we're under capacity.
+        let now = Instant::now();
+        g.retain(|_, v| v.expires_at > now);
+        if g.len() >= self.capacity {
+            let mut entries: Vec<(String, Instant)> = g.iter()
+                .map(|(k, v)| (k.clone(), v.expires_at))
+                .collect();
+            entries.sort_by_key(|(_, t)| *t);
+            let to_drop = g.len().saturating_sub(self.capacity / 2);
+            for (k, _) in entries.into_iter().take(to_drop) {
+                g.remove(&k);
+            }
         }
         g.insert(key, CachedResponse {
             body,
@@ -387,6 +467,120 @@ fn position_stream(
 
 async fn openapi_endpoint() -> Response {
     json_ok(openapi_spec())
+}
+
+// ------------------------------------------------------------------------------------------------
+// Rate limiter — sliding window per client IP. Cheap, in-memory; not a
+// substitute for an upstream load-balancer policy in serious deployments,
+// but enough to keep a single misbehaving client from monopolising the
+// expensive search endpoints.
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Clone)]
+struct RateLimiter {
+    inner: Arc<RwLock<HashMap<String, Vec<Instant>>>>,
+    window: Duration,
+    max: usize,
+}
+
+impl RateLimiter {
+    fn new(window: Duration, max: usize) -> Self {
+        Self { inner: Arc::new(RwLock::new(HashMap::new())), window, max }
+    }
+    /// Returns true if the request is allowed, false if rate-limited.
+    async fn check(&self, key: &str) -> bool {
+        let mut g = self.inner.write().await;
+        let now = Instant::now();
+        let entry = g.entry(key.to_string()).or_default();
+        entry.retain(|t| now.duration_since(*t) < self.window);
+        if entry.len() >= self.max {
+            return false;
+        }
+        entry.push(now);
+        // Opportunistic GC: trim the map periodically.
+        if g.len() > 4096 {
+            let cutoff = self.window;
+            g.retain(|_, ts| ts.iter().any(|t| now.duration_since(*t) < cutoff));
+        }
+        true
+    }
+}
+
+async fn rate_limit_middleware(
+    axum::extract::State(rl): axum::extract::State<RateLimiter>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    // Health and metrics bypass the limit so monitoring isn't gated.
+    let path = req.uri().path();
+    if path == "/health" || path == "/metrics" || path.starts_with("/v1/stream/") {
+        return next.run(req).await;
+    }
+    // Best-effort client identifier: X-Forwarded-For first, then X-Real-IP,
+    // else the connection remote (which is uniform behind a reverse proxy
+    // and so effectively a global limit — acceptable as a fallback).
+    let key = req.headers()
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.split(',').next().unwrap_or("").trim().to_string())
+        .or_else(|| {
+            req.headers()
+                .get("x-real-ip")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    if !rl.check(&key).await {
+        let mut resp = (StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded\n".to_string())
+            .into_response();
+        resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
+        resp.headers_mut().insert("Retry-After", HeaderValue::from_static("10"));
+        return resp;
+    }
+    next.run(req).await
+}
+
+// ------------------------------------------------------------------------------------------------
+// Liveness + metrics
+// ------------------------------------------------------------------------------------------------
+
+static SERVER_STARTED_AT: once_cell::sync::Lazy<Instant> =
+    once_cell::sync::Lazy::new(Instant::now);
+
+async fn health_endpoint() -> Response {
+    let uptime = SERVER_STARTED_AT.elapsed().as_secs();
+    json_ok(json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "uptime_seconds": uptime,
+    }))
+}
+
+async fn metrics_endpoint(
+    axum::extract::State(cache): axum::extract::State<Arc<ResponseCache>>,
+) -> Response {
+    // Prometheus exposition format. Stays text/plain so curl/scrapers
+    // are happy without parsing JSON.
+    let uptime = SERVER_STARTED_AT.elapsed().as_secs();
+    let cache_size = cache.len().await;
+    let body = format!(
+        "# HELP cerridwen_uptime_seconds Process uptime\n\
+         # TYPE cerridwen_uptime_seconds counter\n\
+         cerridwen_uptime_seconds {uptime}\n\
+         # HELP cerridwen_cache_entries Current number of entries in the response cache\n\
+         # TYPE cerridwen_cache_entries gauge\n\
+         cerridwen_cache_entries {cache_size}\n\
+         # HELP cerridwen_build_info Static build info\n\
+         # TYPE cerridwen_build_info gauge\n\
+         cerridwen_build_info{{version=\"{ver}\"}} 1\n",
+        uptime = uptime,
+        cache_size = cache_size,
+        ver = env!("CARGO_PKG_VERSION"),
+    );
+    let mut resp = (StatusCode::OK, body).into_response();
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("text/plain; version=0.0.4"));
+    resp
 }
 
 async fn favicon_endpoint() -> Response {
@@ -616,7 +810,7 @@ fn openapi_spec() -> Value {
 }
 
 async fn aspects_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
-    let (jd_opt, _ll) = match parse_observer_and_jd(&q) {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
         Ok(x) => x,
         Err(e) => return bad_request(&e),
     };
@@ -628,14 +822,49 @@ async fn aspects_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         },
         None => 5.0,
     };
-    let bodies = default_transit_bodies();
-    let aspects = compute_aspects_at(jd, &bodies, orb);
+
+    // Optional opt-ins for the body roster.
+    let include_set: std::collections::HashSet<String> = q.get("include")
+        .map(|s| s.split(',').map(|x| x.trim().to_ascii_lowercase()).collect())
+        .unwrap_or_default();
+    let mut bodies: Vec<i32> = default_transit_bodies().to_vec();
+    use cerridwen::planets::{
+        SE_CERES, SE_CHIRON, SE_JUNO, SE_MEAN_APOG, SE_MEAN_NODE, SE_PALLAS, SE_VESTA,
+    };
+    if include_set.contains("nodes") { bodies.push(SE_MEAN_NODE); }
+    if include_set.contains("lilith") { bodies.push(SE_MEAN_APOG); }
+    if include_set.contains("chiron") { bodies.push(SE_CHIRON); }
+    if include_set.contains("asteroids") {
+        bodies.extend([SE_CERES, SE_PALLAS, SE_JUNO, SE_VESTA]);
+    }
+
+    // Optional ?include_angles=1 — needs an observer to compute Asc/MC.
+    let mut extras: Vec<(String, f64, f64)> = Vec::new();
+    let include_angles = parse_bool(q.get("include_angles"));
+    if include_angles {
+        let Some(ll) = latlong else {
+            return bad_request("include_angles=1 requires latitude+longitude");
+        };
+        let system = match q.get("house_system") {
+            Some(s) => match parse_house_system(s) {
+                Some(c) => c,
+                None => return bad_request(&format!("unknown house_system: {}", s)),
+            },
+            None => 'P',
+        };
+        for (name, now, next) in angle_points(jd, ll.lat, ll.long, system) {
+            extras.push((name, now, next));
+        }
+    }
+
+    let aspects = compute_aspects_extended(jd, &bodies, &extras, orb);
     let arr: Vec<Value> = aspects.iter().map(instant_aspect_to_json).collect();
     json_ok(json!({
         "jd": jd,
         "iso_date": jd2iso(jd),
         "orb": orb,
         "aspects": arr,
+        "include_angles": include_angles,
     }))
 }
 
@@ -775,7 +1004,15 @@ async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
     };
     let limit: i64 = q.get("limit").and_then(|s| s.parse().ok()).unwrap_or(500);
     let split = |key: &str| -> Option<Vec<String>> {
-        q.get(key).map(|s| s.split(',').map(|x| x.to_string()).collect())
+        q.get(key)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .filter(|v: &Vec<String>| !v.is_empty())
     };
     let filter = EventFilter {
         types: split("types"),
@@ -1162,7 +1399,15 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     };
 
     let split = |key: &str| -> Option<Vec<String>> {
-        q.get(key).map(|s| s.split(',').map(|x| x.to_string()).collect())
+        q.get(key)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .filter(|v: &Vec<String>| !v.is_empty())
     };
 
     let filter = EventFilter {

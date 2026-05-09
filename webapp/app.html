@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Cerridwen — astro console</title>
   <style>
     :root {
@@ -67,6 +68,23 @@
     main { padding: 1rem; }
     .panel { display: none; }
     .panel.active { display: block; }
+    svg { max-width: 100%; height: auto; }
+
+    /* Narrow viewports — make the chart fluid and shrink the dense controls. */
+    @media (max-width: 700px) {
+      header { padding: 0.5rem 0.6rem; gap: 0.5rem; }
+      header h1 { font-size: 0.95rem; }
+      .ctx { font-size: 0.78rem; gap: 0.4rem; }
+      .ctx input { padding: 0.2rem 0.35rem; }
+      .ctx input[type=number] { width: 60px !important; }
+      nav.tabs { padding: 0 0.3rem; }
+      nav.tabs button { padding: 0.5rem 0.6rem; font-size: 0.85rem; }
+      main { padding: 0.5rem; }
+      .grid.split { grid-template-columns: 1fr !important; }
+      .controls { padding: 0.5rem; gap: 0.3rem; }
+      table { font-size: 11px; }
+      th, td { padding: 0.25rem 0.4rem; }
+    }
 
     .controls {
       display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1rem;
@@ -152,19 +170,19 @@
   </div>
 </header>
 
-<nav class="tabs" id="tabs">
-  <button data-tab="now" class="active">Now</button>
-  <button data-tab="chart">Chart</button>
-  <button data-tab="bodies">Bodies</button>
-  <button data-tab="houses">Houses</button>
-  <button data-tab="aspects">Aspects</button>
-  <button data-tab="transits">Transits</button>
-  <button data-tab="returns">Returns</button>
-  <button data-tab="eclipses">Eclipses</button>
-  <button data-tab="stars">Stars</button>
-  <button data-tab="events">Events</button>
-  <button data-tab="stream">Stream</button>
-  <button data-tab="raw">Raw API</button>
+<nav class="tabs" id="tabs" role="tablist" aria-label="cerridwen sections">
+  <button role="tab" data-tab="now"      class="active" aria-controls="panel-now"      aria-selected="true">Now</button>
+  <button role="tab" data-tab="chart"    aria-controls="panel-chart"    aria-selected="false" tabindex="-1">Chart</button>
+  <button role="tab" data-tab="bodies"   aria-controls="panel-bodies"   aria-selected="false" tabindex="-1">Bodies</button>
+  <button role="tab" data-tab="houses"   aria-controls="panel-houses"   aria-selected="false" tabindex="-1">Houses</button>
+  <button role="tab" data-tab="aspects"  aria-controls="panel-aspects"  aria-selected="false" tabindex="-1">Aspects</button>
+  <button role="tab" data-tab="transits" aria-controls="panel-transits" aria-selected="false" tabindex="-1">Transits</button>
+  <button role="tab" data-tab="returns"  aria-controls="panel-returns"  aria-selected="false" tabindex="-1">Returns</button>
+  <button role="tab" data-tab="eclipses" aria-controls="panel-eclipses" aria-selected="false" tabindex="-1">Eclipses</button>
+  <button role="tab" data-tab="stars"    aria-controls="panel-stars"    aria-selected="false" tabindex="-1">Stars</button>
+  <button role="tab" data-tab="events"   aria-controls="panel-events"   aria-selected="false" tabindex="-1">Events</button>
+  <button role="tab" data-tab="stream"   aria-controls="panel-stream"   aria-selected="false" tabindex="-1">Stream</button>
+  <button role="tab" data-tab="raw"      aria-controls="panel-raw"      aria-selected="false" tabindex="-1">Raw API</button>
 </nav>
 
 <main>
@@ -473,9 +491,33 @@ document.getElementById('ctx-zodiac').addEventListener('change', () => {
 // =========================================================================
 
 const tabs = document.querySelectorAll('nav.tabs button');
+const tabNames = Array.from(tabs).map(b => b.dataset.tab);
 tabs.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+// Mark every panel for assistive tech.
+document.querySelectorAll('.panel').forEach(p => p.setAttribute('role', 'tabpanel'));
+// Arrow-key navigation across the tab strip.
+document.getElementById('tabs').addEventListener('keydown', (ev) => {
+  const cur = document.querySelector('nav.tabs button.active');
+  if (!cur) return;
+  const i = tabNames.indexOf(cur.dataset.tab);
+  let nxt = null;
+  if (ev.key === 'ArrowRight' || ev.key === 'ArrowDown') nxt = (i + 1) % tabNames.length;
+  else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowUp') nxt = (i - 1 + tabNames.length) % tabNames.length;
+  else if (ev.key === 'Home') nxt = 0;
+  else if (ev.key === 'End') nxt = tabNames.length - 1;
+  if (nxt !== null) {
+    ev.preventDefault();
+    activate(tabNames[nxt]);
+    document.querySelector(`nav.tabs button[data-tab="${tabNames[nxt]}"]`).focus();
+  }
+});
 function activate(name) {
-  tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  tabs.forEach(b => {
+    const isActive = b.dataset.tab === name;
+    b.classList.toggle('active', isActive);
+    b.setAttribute('aria-selected', String(isActive));
+    b.tabIndex = isActive ? 0 : -1;
+  });
   document.querySelectorAll('.panel').forEach(p =>
     p.classList.toggle('active', p.id === 'panel-' + name));
   // Close any open SSE stream when leaving the Stream tab — otherwise the
@@ -494,7 +536,14 @@ function activate(name) {
 
 document.getElementById('ctx-refresh').addEventListener('click', () => {
   const active = document.querySelector('nav.tabs button.active').dataset.tab;
-  if (TAB_REFRESH[active]) TAB_REFRESH[active]();
+  // Auto-refresh tabs have a handler; user-action tabs re-trigger their
+  // primary GO button via a synthesized click.
+  if (TAB_REFRESH[active]) {
+    TAB_REFRESH[active]();
+    return;
+  }
+  const goBtn = document.querySelector(`#panel-${active} button[id$="-go"]`);
+  if (goBtn) goBtn.click();
 });
 
 // =========================================================================
@@ -598,6 +647,8 @@ async function refreshChart() {
     const houses = ctx.lat() !== null && ctx.lon() !== null
       ? await api('/v1/houses', buildQs({ house_system: document.getElementById('chart-house').value }))
       : null;
+    // Fetch instantaneous aspects to draw inner-circle lines.
+    const aspectsResp = await api('/v1/aspects', buildQs({ orb: 6 })).catch(() => ({ aspects: [] }));
 
     const parts = [];
     parts.push(`<circle cx="0" cy="0" r="310" fill="none" stroke="#888" stroke-width="1.5"/>`);
@@ -632,8 +683,37 @@ async function refreshChart() {
         parts.push(`<text x="${tx}" y="${ty+4}" font-size="10" fill="#888">${i+1}</text>`);
       });
     }
+    // Aspect lines (drawn under the planet glyphs so glyphs stay readable).
+    const ASPECT_COLOR = {
+      conjunction: '#bdc3c7',
+      opposition: '#e74c3c',
+      square: '#e74c3c',
+      trine: '#3498db',
+      sextile: '#27ae60',
+    };
+    const SWE_NAME_TO_OLIVIER = {
+      'Sun': 'sun', 'Moon': 'moon', 'Mercury': 'mercury', 'Venus': 'venus',
+      'Mars': 'mars', 'Jupiter': 'jupiter', 'Saturn': 'saturn',
+      'Uranus': 'uranus', 'Neptune': 'neptune', 'Pluto': 'pluto',
+    };
+    (aspectsResp.aspects || []).forEach(a => {
+      const ka = SWE_NAME_TO_OLIVIER[a.body_a];
+      const kb = SWE_NAME_TO_OLIVIER[a.body_b];
+      if (!ka || !kb) return;
+      const da = (olivier[ka] || 0) * 180 / Math.PI;
+      const db = (olivier[kb] || 0) * 180 / Math.PI;
+      const [xa, ya] = polar(150, da);
+      const [xb, yb] = polar(150, db);
+      const stroke = ASPECT_COLOR[a.aspect] || '#666';
+      // Tighter aspects render thicker / more opaque.
+      const opacity = Math.max(0.25, 1 - a.orb_distance / 6);
+      const dash = (a.aspect === 'sextile' || a.aspect === 'semi-sextile') ? '3,2' : '';
+      parts.push(`<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${stroke}" stroke-width="0.8" stroke-opacity="${opacity}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`);
+    });
+
     const traditional = new Set(['sun','moon','mercury','venus','mars','jupiter','saturn']);
     const outer = new Set(['uranus','neptune','pluto']);
+    const rxMap = (olivier.retrograde) || {};
     Object.entries(PLANET_GLYPHS).forEach(([n, g]) => {
       const lon = olivier[n];
       if (lon === undefined) return;
@@ -642,6 +722,10 @@ async function refreshChart() {
       const fill = PLANET_COLORS[n];
       const [x, y] = polar(r, deg);
       parts.push(`<text x="${x}" y="${y+7}" font-size="20" fill="${fill}" text-anchor="middle">${g}</text>`);
+      // Retrograde marker — small ℞ to the right of the glyph.
+      if (rxMap[n]) {
+        parts.push(`<text x="${x+11}" y="${y+11}" font-size="10" fill="${fill}">℞</text>`);
+      }
       const [lx, ly] = polar(245, deg);
       parts.push(`<line x1="${lx}" y1="${ly}" x2="${lx*0.92}" y2="${ly*0.92}" stroke="${fill}" stroke-width="0.8"/>`);
     });
@@ -652,9 +736,10 @@ async function refreshChart() {
       if (lon === undefined) return '';
       const deg = lon * 180 / Math.PI;
       const sign = SIGN_GLYPHS[Math.floor(deg / 30) % 12];
-      return `<div style="display:grid; grid-template-columns:30px 110px 100px 1fr; padding:0.1rem 0;">
+      const isRx = (olivier.retrograde || {})[n];
+      return `<div style="display:grid; grid-template-columns:30px 120px 100px 1fr; padding:0.1rem 0;">
         <span style="color:${PLANET_COLORS[n]}; font-size:16px">${g}</span>
-        <span>${n}</span>
+        <span>${n}${isRx ? ' ℞' : ''}</span>
         <span>${deg.toFixed(2)}°</span>
         <span>${fmtPos(deg, sign)}</span>
       </div>`;
@@ -967,25 +1052,38 @@ async function refreshEvents() {
 let streamSource = null;
 const streamBox = document.getElementById('stream-box');
 
+let lastStreamEvent = null;
 document.getElementById('stream-start').addEventListener('click', () => {
   if (streamSource) streamSource.close();
   const body = document.getElementById('stream-body').value;
   const interval = document.getElementById('stream-interval').value;
   const url = `/v1/stream/body/${body}?interval=${interval}`;
   streamSource = new EventSource(url);
+  const status = document.getElementById('stream-status');
+  status.textContent = `connecting…`;
+  streamSource.addEventListener('open', () => {
+    status.textContent = `streaming ${body} every ${interval}s`;
+  });
   streamSource.addEventListener('position', (ev) => {
     const d = JSON.parse(ev.data);
+    lastStreamEvent = Date.now();
     const row = document.createElement('div');
     row.className = 'row';
     row.textContent = `${d.iso_date}  ${d.body.padEnd(8)}  ${d.longitude.toFixed(4)}°  speed=${d.speed.toFixed(5)}/day  ${d.is_rx ? '℞' : ' '}`;
     streamBox.prepend(row);
     while (streamBox.children.length > 100) streamBox.removeChild(streamBox.lastChild);
     Array.from(streamBox.children).slice(20).forEach(r => r.classList.add('fade'));
+    status.textContent = `streaming ${body} every ${interval}s — last event ${new Date().toLocaleTimeString()}`;
   });
   streamSource.onerror = () => {
-    document.getElementById('stream-status').textContent = '(connection error)';
+    if (streamSource && streamSource.readyState === EventSource.CONNECTING) {
+      status.textContent = '(reconnecting…)';
+    } else if (streamSource && streamSource.readyState === EventSource.CLOSED) {
+      status.textContent = '(disconnected — server unavailable)';
+    } else {
+      status.textContent = '(connection error)';
+    }
   };
-  document.getElementById('stream-status').textContent = `streaming ${body} every ${interval}s`;
 });
 
 document.getElementById('stream-stop').addEventListener('click', () => {

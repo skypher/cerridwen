@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry / git / target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (all features, debug)
+        working-directory: rust
+        env:
+          CERRIDWEN_EPHE_PATH: ${{ github.workspace }}/sweph
+        run: cargo build --features server,mcp,events --all-targets
+
+      - name: Run tests (all features)
+        working-directory: rust
+        env:
+          CERRIDWEN_EPHE_PATH: ${{ github.workspace }}/sweph
+        run: cargo test --features server,mcp,events
+
+      - name: Build (release smoke)
+        working-directory: rust
+        env:
+          CERRIDWEN_EPHE_PATH: ${{ github.workspace }}/sweph
+        run: cargo build --release --features server,mcp,events
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - working-directory: rust
+        run: cargo fmt --check
+        continue-on-error: true   # tolerated until codebase is fully fmt-clean
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - working-directory: rust
+        env:
+          CERRIDWEN_EPHE_PATH: ${{ github.workspace }}/sweph
+        run: cargo clippy --features server,mcp,events --all-targets -- -D warnings
+        continue-on-error: true   # tolerated until codebase is fully lint-clean
