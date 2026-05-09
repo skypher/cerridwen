@@ -177,6 +177,7 @@ async fn main() {
         .route("/robots.txt", get(robots_endpoint))
         .route("/health", get(health_endpoint))
         .route("/metrics", get(metrics_endpoint))
+        .layer(middleware::from_fn(latency_middleware))
         .layer(middleware::from_fn_with_state(
             cache.clone(),
             cache_middleware,
@@ -594,25 +595,33 @@ fn parse_interval_seconds(opt: Option<&String>) -> u64 {
         .unwrap_or(60)
 }
 
-async fn stream_sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+async fn stream_sun_endpoint(
+    headers: axum::http::HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
     let zod = match parse_stream_zodiac(&q) {
         Ok(z) => z,
         Err(e) => return bad_request(&e),
     };
-    let stream = position_stream("Sun".to_string(), interval, zod);
+    let start_id = parse_last_event_id(&headers);
+    let stream = position_stream("Sun".to_string(), interval, zod, start_id);
     Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response()
 }
 
-async fn stream_moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+async fn stream_moon_endpoint(
+    headers: axum::http::HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
     let zod = match parse_stream_zodiac(&q) {
         Ok(z) => z,
         Err(e) => return bad_request(&e),
     };
-    let stream = position_stream("Moon".to_string(), interval, zod);
+    let start_id = parse_last_event_id(&headers);
+    let stream = position_stream("Moon".to_string(), interval, zod, start_id);
     Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response()
@@ -620,6 +629,7 @@ async fn stream_moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Respo
 
 async fn stream_body_endpoint(
     AxumPath(name): AxumPath<String>,
+    headers: axum::http::HeaderMap,
     Query(q): Query<HashMap<String, String>>,
 ) -> Response {
     let canonical = match canonical_body_name(&name) {
@@ -631,10 +641,21 @@ async fn stream_body_endpoint(
         Ok(z) => z,
         Err(e) => return bad_request(&e),
     };
-    let stream = position_stream(canonical, interval, zod);
+    let start_id = parse_last_event_id(&headers);
+    let stream = position_stream(canonical, interval, zod, start_id);
     Sse::new(stream)
         .keep_alive(KeepAlive::default())
         .into_response()
+}
+
+/// Read Last-Event-ID, parse as u64, return as the seed value the next
+/// emitted event should overshoot. Default 0 — first event becomes id=1.
+fn parse_last_event_id(headers: &axum::http::HeaderMap) -> u64 {
+    headers
+        .get("last-event-id")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0)
 }
 
 /// Returns Ok(None) for tropical, Ok(Some((mode, label))) for sidereal.
@@ -655,12 +676,13 @@ fn position_stream(
     canonical: String,
     interval_seconds: u64,
     zodiac: Option<(i32, &'static str)>,
+    start_id: u64,
 ) -> impl Stream<Item = Result<SseEvent, Infallible>> {
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_seconds));
     // Fire on first poll and then at each interval.
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     stream::unfold(
-        (canonical, ticker, zodiac, 0_u64),
+        (canonical, ticker, zodiac, start_id),
         |(name, mut ticker, zod, mut id)| async move {
             ticker.tick().await;
             id += 1;
@@ -751,6 +773,19 @@ impl RateLimiter {
         }
         true
     }
+}
+
+/// Time every request and feed the duration into the latency histogram.
+/// Streams aren't measured (their wall-clock is dominated by the
+/// keep-alive interval, not real work).
+async fn latency_middleware(req: Request<Body>, next: Next) -> Response {
+    if req.uri().path().starts_with("/v1/stream/") {
+        return next.run(req).await;
+    }
+    let start = Instant::now();
+    let resp = next.run(req).await;
+    METRICS.observe_latency(start.elapsed());
+    resp
 }
 
 /// API-key gate. Static state-less middleware with the configured key
@@ -853,6 +888,30 @@ struct Metrics {
     rate_limit_window_seconds: AtomicU64,
     /// Snapshot of cache TTL for monitoring.
     cache_ttl_seconds: AtomicU64,
+    /// Latency histograms keyed by (route_class, bucket).
+    /// Buckets in seconds: 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0, +Inf.
+    latency_buckets_2xx: [AtomicU64; 9],
+    latency_sum_us: AtomicU64,
+    latency_count: AtomicU64,
+}
+
+const LATENCY_BUCKETS_S: [f64; 8] = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0];
+
+impl Metrics {
+    fn observe_latency(&self, dur: Duration) {
+        let secs = dur.as_secs_f64();
+        let us = dur.as_micros() as u64;
+        self.latency_sum_us.fetch_add(us, Ordering::Relaxed);
+        self.latency_count.fetch_add(1, Ordering::Relaxed);
+        // Cumulative: every bucket whose upper bound >= secs gets ++.
+        for (i, &upper) in LATENCY_BUCKETS_S.iter().enumerate() {
+            if secs <= upper {
+                self.latency_buckets_2xx[i].fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        // The +Inf bucket counts every observation.
+        self.latency_buckets_2xx[8].fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl Metrics {
@@ -869,6 +928,23 @@ impl Metrics {
 }
 
 static METRICS: once_cell::sync::Lazy<Metrics> = once_cell::sync::Lazy::new(Metrics::default);
+
+fn histogram_lines() -> String {
+    let mut out = String::new();
+    for (i, &upper) in LATENCY_BUCKETS_S.iter().enumerate() {
+        let n = METRICS.latency_buckets_2xx[i].load(Ordering::Relaxed);
+        out.push_str(&format!(
+            "cerridwen_request_duration_seconds_bucket{{le=\"{}\"}} {}\n",
+            upper, n
+        ));
+    }
+    let inf = METRICS.latency_buckets_2xx[8].load(Ordering::Relaxed);
+    out.push_str(&format!(
+        "cerridwen_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
+        inf
+    ));
+    out
+}
 
 // ------------------------------------------------------------------------------------------------
 // Liveness + metrics
@@ -960,9 +1036,17 @@ async fn metrics_endpoint(
          # HELP cerridwen_cache_ttl_seconds Configured response-cache TTL\n\
          # TYPE cerridwen_cache_ttl_seconds gauge\n\
          cerridwen_cache_ttl_seconds {cache_ttl}\n\
+         # HELP cerridwen_request_duration_seconds Latency histogram\n\
+         # TYPE cerridwen_request_duration_seconds histogram\n\
+         {hist_lines}\
+         cerridwen_request_duration_seconds_sum {hist_sum}\n\
+         cerridwen_request_duration_seconds_count {hist_count}\n\
          # HELP cerridwen_build_info Static build info\n\
          # TYPE cerridwen_build_info gauge\n\
          cerridwen_build_info{{version=\"{ver}\"}} 1\n",
+        hist_lines = histogram_lines(),
+        hist_sum = METRICS.latency_sum_us.load(Ordering::Relaxed) as f64 / 1_000_000.0,
+        hist_count = METRICS.latency_count.load(Ordering::Relaxed),
         rl_max = METRICS.rate_limit_max.load(Ordering::Relaxed),
         rl_win = METRICS.rate_limit_window_seconds.load(Ordering::Relaxed),
         cache_ttl = METRICS.cache_ttl_seconds.load(Ordering::Relaxed),

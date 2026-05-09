@@ -736,20 +736,53 @@ async function refreshChart() {
     const traditional = new Set(['sun','moon','mercury','venus','mars','jupiter','saturn']);
     const outer = new Set(['uranus','neptune','pluto']);
     const rxMap = (olivier.retrograde) || {};
-    Object.entries(PLANET_GLYPHS).forEach(([n, g]) => {
-      const lon = olivier[n];
-      if (lon === undefined) return;
-      const deg = lon * 180 / Math.PI;
-      const r = traditional.has(n) ? 215 : (outer.has(n) ? 200 : 175);
-      const fill = PLANET_COLORS[n];
-      const [x, y] = polar(r, deg);
-      parts.push(`<text x="${x}" y="${y+7}" font-size="20" fill="${fill}" text-anchor="middle">${g}</text>`);
-      // Retrograde marker — small ℞ to the right of the glyph.
-      if (rxMap[n]) {
-        parts.push(`<text x="${x+11}" y="${y+11}" font-size="10" fill="${fill}">℞</text>`);
+
+    // Build the list of bodies, then nudge any cluster (glyphs within
+    // ~7° of each other) outward in radius so glyphs stop overlapping.
+    const items = Object.entries(PLANET_GLYPHS)
+      .map(([n, g]) => {
+        const lon = olivier[n];
+        if (lon === undefined) return null;
+        const deg = lon * 180 / Math.PI;
+        const baseR = traditional.has(n) ? 215 : (outer.has(n) ? 200 : 175);
+        return { n, g, deg, baseR, fill: PLANET_COLORS[n] || '#9b59b6' };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.deg - b.deg);
+    // Sweep through neighbours within 7° and bump alternating items
+    // ±10px in radius so a cluster of 3 fans out to ~30px spread.
+    const CLUSTER_DEG = 7;
+    const RADIUS_NUDGE = 12;
+    items.forEach(it => { it.r = it.baseR; });
+    for (let i = 0; i < items.length; i++) {
+      const a = items[i];
+      let cluster = [a];
+      for (let j = i + 1; j < items.length; j++) {
+        const b = items[j];
+        // mod360 distance
+        const d = Math.min(
+          Math.abs(b.deg - a.deg),
+          360 - Math.abs(b.deg - a.deg),
+        );
+        if (d <= CLUSTER_DEG) cluster.push(b); else break;
       }
-      const [lx, ly] = polar(245, deg);
-      parts.push(`<line x1="${lx}" y1="${ly}" x2="${lx*0.92}" y2="${ly*0.92}" stroke="${fill}" stroke-width="0.8"/>`);
+      if (cluster.length > 1) {
+        cluster.forEach((it, k) => {
+          const offset = (k - (cluster.length - 1) / 2) * RADIUS_NUDGE;
+          it.r = it.baseR + offset;
+        });
+        i += cluster.length - 1;
+      }
+    }
+
+    items.forEach(it => {
+      const [x, y] = polar(it.r, it.deg);
+      parts.push(`<text x="${x}" y="${y+7}" font-size="20" fill="${it.fill}" text-anchor="middle">${it.g}</text>`);
+      if (rxMap[it.n]) {
+        parts.push(`<text x="${x+11}" y="${y+11}" font-size="10" fill="${it.fill}">℞</text>`);
+      }
+      const [lx, ly] = polar(245, it.deg);
+      parts.push(`<line x1="${lx}" y1="${ly}" x2="${lx*0.92}" y2="${ly*0.92}" stroke="${it.fill}" stroke-width="0.8"/>`);
     });
     svg.innerHTML = parts.join('');
 
