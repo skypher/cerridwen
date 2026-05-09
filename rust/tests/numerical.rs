@@ -22,10 +22,16 @@ fn assert_iso_within(actual: &str, expected: &str, max_seconds: f64) {
     assert!(
         diff_seconds <= max_seconds,
         "iso timestamps differ by {:.3}s (> {}s): actual={}, expected={}",
-        diff_seconds, max_seconds, actual, expected,
+        diff_seconds,
+        max_seconds,
+        actual,
+        expected,
     );
     if std::env::var("CERRIDWEN_REPORT_DRIFT").is_ok() {
-        eprintln!("drift: {:.3}s — actual={}, expected={}", diff_seconds, actual, expected);
+        eprintln!(
+            "drift: {:.3}s — actual={}, expected={}",
+            diff_seconds, actual, expected
+        );
     }
 }
 
@@ -45,13 +51,13 @@ fn moon_speed() {
 #[test]
 fn moon_period_length() {
     let m = Moon::at_jd(2456794.949305556);
-    assert_abs_diff_eq!(m.period_length(None), 29.517968974076211, epsilon = TOL);
+    assert_abs_diff_eq!(m.period_length(None), 29.517_968_974_076_21, epsilon = TOL);
 }
 
 #[test]
 fn next_new_moon() {
     let m = Moon::at_jd(2456794.9541666);
-    assert_abs_diff_eq!(m.next_new_moon(None).jd, 2456806.2779293722, epsilon = TOL);
+    assert_abs_diff_eq!(m.next_new_moon(None).jd, 2_456_806.277_929_372, epsilon = TOL);
 }
 
 #[test]
@@ -111,7 +117,9 @@ fn next_sign_change() {
 fn angle_finder_new_moon_virgo_2014() {
     let m = Moon::at_jd(2456868.0);
     let sun = Sun::new();
-    let (jd, _, _) = m.next_angle_to_planet(&sun.0, 0.0, None, None, None, None, None).unwrap();
+    let (jd, _, _) = m
+        .next_angle_to_planet(&sun.0, 0.0, None, None, None, None, None)
+        .unwrap();
     assert_iso_within(&jd2iso(jd), "2014-08-25 14:12:46", 10.0);
 }
 
@@ -119,8 +127,12 @@ fn angle_finder_new_moon_virgo_2014() {
 fn angle_finder_symmetric_sun_moon() {
     let s = Sun::at_jd(2456868.0);
     let m = Moon::at_jd(2456868.0);
-    let (jd1, _, _) = s.0.next_angle_to_planet(&m.0, 0.0, None, None, None, None, None).unwrap();
-    let (jd2, _, _) = m.0.next_angle_to_planet(&s.0, 0.0, None, None, None, None, None).unwrap();
+    let (jd1, _, _) =
+        s.0.next_angle_to_planet(&m.0, 0.0, None, None, None, None, None)
+            .unwrap();
+    let (jd2, _, _) =
+        m.0.next_angle_to_planet(&s.0, 0.0, None, None, None, None, None)
+            .unwrap();
     assert_eq!(jd2iso(jd1), jd2iso(jd2));
 }
 
@@ -128,8 +140,12 @@ fn angle_finder_symmetric_sun_moon() {
 fn angle_finder_jupiter_saturn_great_conjunction_2020() {
     let j = Jupiter::at_jd(2456868.0);
     let s = Saturn::at_jd(2456868.0);
-    let (jd1, _, _) = j.0.next_angle_to_planet(&s.0, 0.0, None, None, None, None, None).unwrap();
-    let (jd2, _, _) = s.0.next_angle_to_planet(&j.0, 0.0, None, None, None, None, None).unwrap();
+    let (jd1, _, _) =
+        j.0.next_angle_to_planet(&s.0, 0.0, None, None, None, None, None)
+            .unwrap();
+    let (jd2, _, _) =
+        s.0.next_angle_to_planet(&j.0, 0.0, None, None, None, None, None)
+            .unwrap();
     assert_eq!(jd2iso(jd1), jd2iso(jd2));
     assert_iso_within(&jd2iso(jd1), "2020-12-21 18:20:29", 10.0);
 }
@@ -182,7 +198,10 @@ fn sign_change_mercury_2() {
 fn mercury_semisextile_sun_impossible() {
     let m = Mercury::at_jd(2460932.0);
     let sun = Sun::at_jd(2460932.0);
-    assert!(m.0.next_angle_to_planet(&sun.0, 30.0, None, None, None, None, None).is_none());
+    assert!(m
+        .0
+        .next_angle_to_planet(&sun.0, 30.0, None, None, None, None, None)
+        .is_none());
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -248,7 +267,10 @@ fn next_event_sun_is_an_ingress() {
     let ev = s.0.next_event().expect("Sun always has a next ingress");
     assert!(ev.description.contains("ingress"));
     let nsc = s.0.next_sign_change(None);
-    assert!((ev.jd - nsc).abs() < 1e-9, "expected ev.jd ≈ next sign change");
+    assert!(
+        (ev.jd - nsc).abs() < 1e-9,
+        "expected ev.jd ≈ next sign change"
+    );
 }
 
 #[test]
@@ -271,8 +293,13 @@ fn void_of_course_basic() {
     let m = Moon::at_jd(jd);
     let nsc = m.0.next_sign_change(None);
     let (_voc, until) = m.is_void_of_course(None, false);
-    assert!(until > jd && until <= nsc + 1e-6,
-            "until={} jd={} nsc={}", until, jd, nsc);
+    assert!(
+        until > jd && until <= nsc + 1e-6,
+        "until={} jd={} nsc={}",
+        until,
+        jd,
+        nsc
+    );
 }
 
 #[test]
@@ -285,8 +312,10 @@ fn void_of_course_traditional_only_invariant() {
     let (voc_modern, _) = m.is_void_of_course(None, false);
     let (voc_trad, _) = m.is_void_of_course(None, true);
     if voc_modern {
-        assert!(voc_trad,
-                "modern says VoC but traditional disagrees — impossible");
+        assert!(
+            voc_trad,
+            "modern says VoC but traditional disagrees — impossible"
+        );
     }
 }
 

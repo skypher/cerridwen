@@ -20,7 +20,10 @@ fn main() {
     let sun = compute_sun_data(None, None);
     println!("Julian day: {}", sun.jd);
     println!("Universal time (UTC): {}", sun.iso_date);
-    println!("Local time: {}", Local::now().format("%a %b %e %H:%M:%S %Y"));
+    println!(
+        "Local time: {}",
+        Local::now().format("%a %b %e %H:%M:%S %Y")
+    );
 
     let (sign, deg, min, sec) = sun.position.rel_tuple();
     println!(
@@ -43,7 +46,9 @@ fn main() {
     let moon = compute_moon_data_with(
         None,
         None,
-        MoonOptions { voc_traditional_only: args.voc_traditional_only },
+        MoonOptions {
+            voc_traditional_only: args.voc_traditional_only,
+        },
     );
     let (sign, deg, min, sec) = moon.position.rel_tuple();
     println!(
@@ -85,7 +90,11 @@ fn main() {
     println!("lunation number: {}", moon.lunation_number);
 
     let voc = &moon.void_of_course;
-    let voc_label = if voc.traditional_only { " (traditional)" } else { "" };
+    let voc_label = if voc.traditional_only {
+        " (traditional)"
+    } else {
+        ""
+    };
     if voc.is_void {
         println!(
             "void of course{}: yes — until {} ({})",

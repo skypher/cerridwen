@@ -10,31 +10,57 @@ use axum::{
     extract::{Path as AxumPath, Query},
     http::{HeaderValue, Request, StatusCode},
     middleware::{self, Next},
-    response::{sse::{Event as SseEvent, KeepAlive, Sse}, IntoResponse, Response},
+    response::{
+        sse::{Event as SseEvent, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::get,
     Router,
 };
-use futures_util::stream::{self, Stream};
-use std::convert::Infallible;
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
     angle_points, apply_ayanamsha, compute_aspects_extended, compute_ayanamsha, compute_houses,
-    compute_moon_data_with, compute_sun_data, compute_transits, default_transit_bodies,
+    compute_moon_data_with, compute_sun_data, compute_transits_extended, default_transit_bodies,
     eclipses_within_period, fixed_star, jd2iso, jd_now, next_return, parse_ayanamsha,
-    parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems, ActiveTransit, ASPECTS,
-    Eclipse, Houses, InstantAspect, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent,
-    PlanetLongitude, SunData, VoidOfCourseData,
+    parse_house_system, parse_jd_or_iso_date_in_tz, valid_house_systems, ActiveTransit, Eclipse,
+    Houses, InstantAspect, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent,
+    PlanetLongitude, SunData, VoidOfCourseData, ASPECTS,
 };
 use clap::Parser;
+use futures_util::stream::{self, Stream};
 use serde_json::{json, Value};
+use std::convert::Infallible;
 
 #[derive(Parser, Debug)]
-#[command(name = "cerridwen-server",
-          about = "JSON HTTP server exposing cerridwen sun/moon/event data")]
+#[command(
+    name = "cerridwen-server",
+    about = "JSON HTTP server exposing cerridwen sun/moon/event data"
+)]
 struct Args {
+    /// Listen address. Use `0.0.0.0` to expose externally.
+    /// Default `127.0.0.1` keeps the server local — sit behind nginx.
+    #[arg(long, default_value = "127.0.0.1")]
+    bind: String,
+
     #[arg(short, long, default_value_t = 2828)]
     port: u16,
+
+    /// Response cache TTL in seconds. Set to 0 to disable caching entirely.
+    /// Env: `CERRIDWEN_CACHE_TTL`.
+    #[arg(long, env = "CERRIDWEN_CACHE_TTL", default_value_t = 10)]
+    cache_ttl: u64,
+
+    /// Rate limit: max requests per window per client.
+    /// Env: `CERRIDWEN_RATE_LIMIT_MAX`.
+    #[arg(long, env = "CERRIDWEN_RATE_LIMIT_MAX", default_value_t = 60)]
+    rate_limit_max: usize,
+
+    /// Rate limit: window length in seconds.
+    /// Env: `CERRIDWEN_RATE_LIMIT_WINDOW`.
+    #[arg(long, env = "CERRIDWEN_RATE_LIMIT_WINDOW", default_value_t = 10)]
+    rate_limit_window: u64,
+
     #[arg(short, long, default_value_t = false)]
     test: bool,
 }
@@ -54,14 +80,18 @@ async fn main() {
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
         let data = compute_moon_data_with(None, Some(observer), MoonOptions::default());
-        println!("{}", serde_json::to_string_pretty(&moon_data_to_json(&data, 0.0, "tropical")).unwrap());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&moon_data_to_json(&data, 0.0, "tropical")).unwrap()
+        );
         return;
     }
 
-    let cache = Arc::new(ResponseCache::new(Duration::from_secs(10)));
-    // 60 requests per 10 seconds per client — generous for normal use,
-    // tight enough to bound abuse on the expensive search endpoints.
-    let rate_limiter = RateLimiter::new(Duration::from_secs(10), 60);
+    let cache = Arc::new(ResponseCache::new(Duration::from_secs(args.cache_ttl)));
+    let rate_limiter = RateLimiter::new(
+        Duration::from_secs(args.rate_limit_window),
+        args.rate_limit_max,
+    );
     let cors = tower_http::cors::CorsLayer::new()
         .allow_origin(tower_http::cors::Any)
         .allow_methods([axum::http::Method::GET, axum::http::Method::OPTIONS])
@@ -90,14 +120,30 @@ async fn main() {
         .route("/favicon.ico", get(favicon_endpoint))
         .route("/health", get(health_endpoint))
         .route("/metrics", get(metrics_endpoint))
-        .layer(middleware::from_fn_with_state(cache.clone(), cache_middleware))
-        .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
+        .layer(middleware::from_fn_with_state(
+            cache.clone(),
+            cache_middleware,
+        ))
+        .layer(middleware::from_fn_with_state(
+            rate_limiter,
+            rate_limit_middleware,
+        ))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(cors)
         .with_state(cache);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
-    tracing::info!(port = args.port, version = env!("CARGO_PKG_VERSION"), "starting cerridwen-server");
+    let bind_str = format!("{}:{}", args.bind, args.port);
+    let addr: SocketAddr = bind_str.parse().unwrap_or_else(|e| {
+        tracing::error!("invalid --bind {}: {}", bind_str, e);
+        std::process::exit(2);
+    });
+    tracing::info!(
+        bind = %addr,
+        cache_ttl = args.cache_ttl,
+        rate_limit = format!("{}/{}s", args.rate_limit_max, args.rate_limit_window),
+        version = env!("CARGO_PKG_VERSION"),
+        "starting cerridwen-server"
+    );
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
@@ -138,21 +184,21 @@ async fn moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 /// Resolves the zodiac/ayanamsha query params for a given JD.
 /// Returns Ok((ayanamsha_deg, ayanamsha_name)) — ayanamsha_deg is 0.0 in
 /// tropical mode and `name` is "tropical".
-fn parse_zodiac(
-    q: &HashMap<String, String>,
-    jd: f64,
-) -> Result<(f64, &'static str), String> {
+fn parse_zodiac(q: &HashMap<String, String>, jd: f64) -> Result<(f64, &'static str), String> {
     let zodiac = q.get("zodiac").map(|s| s.to_ascii_lowercase());
     match zodiac.as_deref() {
         None | Some("tropical") => Ok((0.0, "tropical")),
         Some("sidereal") => {
             let name = q.get("ayanamsha").map(|s| s.as_str()).unwrap_or("lahiri");
-            let (mode, label) = parse_ayanamsha(name)
-                .ok_or_else(|| format!("unknown ayanamsha: {}", name))?;
+            let (mode, label) =
+                parse_ayanamsha(name).ok_or_else(|| format!("unknown ayanamsha: {}", name))?;
             let deg = compute_ayanamsha(jd, mode);
             Ok((deg, label))
         }
-        Some(other) => Err(format!("zodiac must be tropical or sidereal, got: {}", other)),
+        Some(other) => Err(format!(
+            "zodiac must be tropical or sidereal, got: {}",
+            other
+        )),
     }
 }
 
@@ -167,10 +213,7 @@ fn shift_longitude(p: &PlanetLongitude, ayanamsha_deg: f64) -> PlanetLongitude {
 /// Permissive bool parser: accepts "1", "true", "yes", "on" (case-insensitive).
 fn parse_bool(opt: Option<&String>) -> bool {
     match opt {
-        Some(s) => matches!(
-            s.to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
+        Some(s) => matches!(s.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
         None => false,
     }
 }
@@ -191,7 +234,11 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         Err(e) => return bad_request(&e),
     };
     let shift = |lon_deg: f64| -> f64 {
-        if ayan != 0.0 { apply_ayanamsha(lon_deg, ayan) } else { lon_deg }
+        if ayan != 0.0 {
+            apply_ayanamsha(lon_deg, ayan)
+        } else {
+            lon_deg
+        }
     };
 
     let mut result = serde_json::Map::new();
@@ -226,9 +273,15 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         SE_URANUS, SE_VENUS,
     };
     let classic_ids: &[(&str, i32)] = &[
-        ("sun", SE_SUN), ("moon", SE_MOON), ("mercury", SE_MERCURY),
-        ("venus", SE_VENUS), ("mars", SE_MARS), ("jupiter", SE_JUPITER),
-        ("saturn", SE_SATURN), ("uranus", SE_URANUS), ("neptune", SE_NEPTUNE),
+        ("sun", SE_SUN),
+        ("moon", SE_MOON),
+        ("mercury", SE_MERCURY),
+        ("venus", SE_VENUS),
+        ("mars", SE_MARS),
+        ("jupiter", SE_JUPITER),
+        ("saturn", SE_SATURN),
+        ("uranus", SE_URANUS),
+        ("neptune", SE_NEPTUNE),
         ("pluto", SE_PLUTO),
     ];
     for (name, id) in classic_ids {
@@ -253,7 +306,10 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     ];
     for (name, id) in extras {
         let p = Planet::new(*id, Some(jd), None);
-        result.insert((*name).into(), json!(shift(p.longitude_at(jd)).to_radians()));
+        result.insert(
+            (*name).into(),
+            json!(shift(p.longitude_at(jd)).to_radians()),
+        );
         if p.has_rx_stations() {
             rx.insert((*name).into(), json!(p.is_rx(None)));
         }
@@ -276,9 +332,7 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         let h = compute_houses(jd, ll.lat, ll.long, system);
         // House cusps are tropical by construction; shift them along with
         // the bodies when sidereal mode is selected.
-        let cusps_rad: Vec<f64> = h.cusps.iter()
-            .map(|c| shift(*c).to_radians())
-            .collect();
+        let cusps_rad: Vec<f64> = h.cusps.iter().map(|c| shift(*c).to_radians()).collect();
         result.insert("houses".into(), json!(cusps_rad));
         result.insert("house_system".into(), json!(h.system_code.to_string()));
     }
@@ -334,20 +388,22 @@ impl ResponseCache {
         let now = Instant::now();
         g.retain(|_, v| v.expires_at > now);
         if g.len() >= self.capacity {
-            let mut entries: Vec<(String, Instant)> = g.iter()
-                .map(|(k, v)| (k.clone(), v.expires_at))
-                .collect();
+            let mut entries: Vec<(String, Instant)> =
+                g.iter().map(|(k, v)| (k.clone(), v.expires_at)).collect();
             entries.sort_by_key(|(_, t)| *t);
             let to_drop = g.len().saturating_sub(self.capacity / 2);
             for (k, _) in entries.into_iter().take(to_drop) {
                 g.remove(&k);
             }
         }
-        g.insert(key, CachedResponse {
-            body,
-            content_type,
-            expires_at: Instant::now() + self.ttl,
-        });
+        g.insert(
+            key,
+            CachedResponse {
+                body,
+                content_type,
+                expires_at: Instant::now() + self.ttl,
+            },
+        );
     }
 }
 
@@ -360,24 +416,26 @@ async fn cache_middleware(
     if req.uri().path().starts_with("/v1/stream/") {
         return next.run(req).await;
     }
-    let key = format!(
-        "{}?{}",
-        req.uri().path(),
-        req.uri().query().unwrap_or("")
-    );
+    let key = format!("{}?{}", req.uri().path(), req.uri().query().unwrap_or(""));
     if let Some(cached) = cache.get(&key).await {
+        METRICS.cache_hits.fetch_add(1, Ordering::Relaxed);
+        METRICS.record_status(StatusCode::OK);
         let mut resp = (StatusCode::OK, cached.body).into_response();
         resp.headers_mut().insert(
             "Content-Type",
-            HeaderValue::from_str(&cached.content_type).unwrap_or_else(|_|
-                HeaderValue::from_static("application/json")),
+            HeaderValue::from_str(&cached.content_type)
+                .unwrap_or_else(|_| HeaderValue::from_static("application/json")),
         );
-        resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-        resp.headers_mut().insert("X-Cache", HeaderValue::from_static("HIT"));
+        resp.headers_mut()
+            .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+        resp.headers_mut()
+            .insert("X-Cache", HeaderValue::from_static("HIT"));
         return resp;
     }
+    METRICS.cache_misses.fetch_add(1, Ordering::Relaxed);
     let resp = next.run(req).await;
     let status = resp.status();
+    METRICS.record_status(status);
     if status != StatusCode::OK {
         return resp; // don't cache non-200
     }
@@ -394,7 +452,8 @@ async fn cache_middleware(
     };
     cache.set(key, bytes.clone(), content_type).await;
     let mut resp = Response::from_parts(parts, Body::from(bytes));
-    resp.headers_mut().insert("X-Cache", HeaderValue::from_static("MISS"));
+    resp.headers_mut()
+        .insert("X-Cache", HeaderValue::from_static("MISS"));
     resp
 }
 
@@ -408,16 +467,28 @@ fn parse_interval_seconds(opt: Option<&String>) -> u64 {
         .unwrap_or(60)
 }
 
-async fn stream_sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+async fn stream_sun_endpoint(
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
-    let stream = position_stream("Sun".to_string(), interval);
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    let zod = match parse_stream_zodiac(&q) {
+        Ok(z) => z,
+        Err(e) => return bad_request(&e),
+    };
+    let stream = position_stream("Sun".to_string(), interval, zod);
+    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
 }
 
-async fn stream_moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Sse<impl Stream<Item = Result<SseEvent, Infallible>>> {
+async fn stream_moon_endpoint(
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
-    let stream = position_stream("Moon".to_string(), interval);
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    let zod = match parse_stream_zodiac(&q) {
+        Ok(z) => z,
+        Err(e) => return bad_request(&e),
+    };
+    let stream = position_stream("Moon".to_string(), interval, zod);
+    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
 }
 
 async fn stream_body_endpoint(
@@ -429,40 +500,80 @@ async fn stream_body_endpoint(
         None => return not_found(&format!("unknown body: {}", name)),
     };
     let interval = parse_interval_seconds(q.get("interval"));
-    let stream = position_stream(canonical, interval);
-    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+    let zod = match parse_stream_zodiac(&q) {
+        Ok(z) => z,
+        Err(e) => return bad_request(&e),
+    };
+    let stream = position_stream(canonical, interval, zod);
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
+/// Returns Ok(None) for tropical, Ok(Some((mode, label))) for sidereal.
+fn parse_stream_zodiac(
+    q: &HashMap<String, String>,
+) -> Result<Option<(i32, &'static str)>, String> {
+    match q.get("zodiac").map(|s| s.to_ascii_lowercase()).as_deref() {
+        None | Some("") | Some("tropical") => Ok(None),
+        Some("sidereal") => {
+            let name = q.get("ayanamsha").map(|s| s.as_str()).unwrap_or("lahiri");
+            parse_ayanamsha(name)
+                .map(Some)
+                .ok_or_else(|| format!("unknown ayanamsha: {}", name))
+        }
+        Some(other) => Err(format!("zodiac must be tropical or sidereal: {}", other)),
+    }
 }
 
 fn position_stream(
     canonical: String,
     interval_seconds: u64,
+    zodiac: Option<(i32, &'static str)>,
 ) -> impl Stream<Item = Result<SseEvent, Infallible>> {
     let mut ticker = tokio::time::interval(Duration::from_secs(interval_seconds));
     // Fire on first poll and then at each interval.
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    stream::unfold((canonical, ticker), |(name, mut ticker)| async move {
-        ticker.tick().await;
-        let jd = jd_now();
-        let planet = match body_for(&name, jd) {
-            Some(p) => p,
-            None => return None,
-        };
-        let lon = planet.longitude_at(jd);
-        let pos = PlanetLongitude::new(lon);
-        let payload = json!({
-            "body": name,
-            "jd": jd,
-            "iso_date": jd2iso(jd),
-            "longitude": lon,
-            "speed": planet.speed(None),
-            "is_rx": planet.is_rx(None),
-            "position": planet_longitude_to_json(&pos),
-        });
-        let event = SseEvent::default()
-            .event("position")
-            .data(payload.to_string());
-        Some((Ok(event), (name, ticker)))
-    })
+    stream::unfold(
+        (canonical, ticker, zodiac, 0_u64),
+        |(name, mut ticker, zod, mut id)| async move {
+            ticker.tick().await;
+            id += 1;
+            let jd = jd_now();
+            let planet = match body_for(&name, jd) {
+                Some(p) => p,
+                None => return None,
+            };
+            let trop_lon = planet.longitude_at(jd);
+            let (lon, ayan_label, ayan_deg) = match zod {
+                Some((mode, label)) => {
+                    let ayan = compute_ayanamsha(jd, mode);
+                    (apply_ayanamsha(trop_lon, ayan), label, Some(ayan))
+                }
+                None => (trop_lon, "tropical", None),
+            };
+            let pos = PlanetLongitude::new(lon);
+            let payload = json!({
+                "body": name,
+                "jd": jd,
+                "iso_date": jd2iso(jd),
+                "longitude": lon,
+                "speed": planet.speed(None),
+                "is_rx": planet.is_rx(None),
+                "position": planet_longitude_to_json(&pos),
+                "zodiac": ayan_label,
+                "ayanamsha_degrees": ayan_deg,
+            });
+            // Include id: line so SSE clients can resume via Last-Event-ID
+            // on reconnect (browsers send the last id back as the
+            // Last-Event-ID HTTP header automatically).
+            let event = SseEvent::default()
+                .event("position")
+                .id(id.to_string())
+                .data(payload.to_string());
+            Some((Ok(event), (name, ticker, zod, id)))
+        },
+    )
 }
 
 async fn openapi_endpoint() -> Response {
@@ -485,7 +596,11 @@ struct RateLimiter {
 
 impl RateLimiter {
     fn new(window: Duration, max: usize) -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())), window, max }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+            window,
+            max,
+        }
     }
     /// Returns true if the request is allowed, false if rate-limited.
     async fn check(&self, key: &str) -> bool {
@@ -519,7 +634,8 @@ async fn rate_limit_middleware(
     // Best-effort client identifier: X-Forwarded-For first, then X-Real-IP,
     // else the connection remote (which is uniform behind a reverse proxy
     // and so effectively a global limit — acceptable as a fallback).
-    let key = req.headers()
+    let key = req
+        .headers()
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.split(',').next().unwrap_or("").trim().to_string())
@@ -531,21 +647,60 @@ async fn rate_limit_middleware(
         })
         .unwrap_or_else(|| "unknown".to_string());
     if !rl.check(&key).await {
-        let mut resp = (StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded\n".to_string())
+        METRICS.rate_limited.fetch_add(1, Ordering::Relaxed);
+        METRICS.record_status(StatusCode::TOO_MANY_REQUESTS);
+        let mut resp = (
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate limit exceeded\n".to_string(),
+        )
             .into_response();
-        resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
-        resp.headers_mut().insert("Retry-After", HeaderValue::from_static("10"));
+        resp.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("text/plain"));
+        resp.headers_mut()
+            .insert("Retry-After", HeaderValue::from_static("10"));
         return resp;
     }
     next.run(req).await
 }
 
 // ------------------------------------------------------------------------------------------------
+// Metrics — atomic counters tracked from the cache and rate-limit
+// middleware. Kept tiny and lock-free so the hot path doesn't pay for it.
+// ------------------------------------------------------------------------------------------------
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+#[derive(Default)]
+struct Metrics {
+    requests_total: AtomicU64,
+    cache_hits: AtomicU64,
+    cache_misses: AtomicU64,
+    rate_limited: AtomicU64,
+    /// status_2xx, _3xx, _4xx, _5xx
+    status_classes: [AtomicU64; 4],
+}
+
+impl Metrics {
+    fn record_status(&self, status: StatusCode) {
+        self.requests_total.fetch_add(1, Ordering::Relaxed);
+        let bucket = match status.as_u16() / 100 {
+            2 => 0,
+            3 => 1,
+            4 => 2,
+            _ => 3,
+        };
+        self.status_classes[bucket].fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+static METRICS: once_cell::sync::Lazy<Metrics> =
+    once_cell::sync::Lazy::new(Metrics::default);
+
+// ------------------------------------------------------------------------------------------------
 // Liveness + metrics
 // ------------------------------------------------------------------------------------------------
 
-static SERVER_STARTED_AT: once_cell::sync::Lazy<Instant> =
-    once_cell::sync::Lazy::new(Instant::now);
+static SERVER_STARTED_AT: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
 async fn health_endpoint() -> Response {
     let uptime = SERVER_STARTED_AT.elapsed().as_secs();
@@ -563,6 +718,14 @@ async fn metrics_endpoint(
     // are happy without parsing JSON.
     let uptime = SERVER_STARTED_AT.elapsed().as_secs();
     let cache_size = cache.len().await;
+    let cache_hits = METRICS.cache_hits.load(Ordering::Relaxed);
+    let cache_misses = METRICS.cache_misses.load(Ordering::Relaxed);
+    let total_reqs = METRICS.requests_total.load(Ordering::Relaxed);
+    let rl_hits = METRICS.rate_limited.load(Ordering::Relaxed);
+    let s2 = METRICS.status_classes[0].load(Ordering::Relaxed);
+    let s3 = METRICS.status_classes[1].load(Ordering::Relaxed);
+    let s4 = METRICS.status_classes[2].load(Ordering::Relaxed);
+    let s5 = METRICS.status_classes[3].load(Ordering::Relaxed);
     let body = format!(
         "# HELP cerridwen_uptime_seconds Process uptime\n\
          # TYPE cerridwen_uptime_seconds counter\n\
@@ -570,16 +733,34 @@ async fn metrics_endpoint(
          # HELP cerridwen_cache_entries Current number of entries in the response cache\n\
          # TYPE cerridwen_cache_entries gauge\n\
          cerridwen_cache_entries {cache_size}\n\
+         # HELP cerridwen_cache_hits_total Cache hits since startup\n\
+         # TYPE cerridwen_cache_hits_total counter\n\
+         cerridwen_cache_hits_total {cache_hits}\n\
+         # HELP cerridwen_cache_misses_total Cache misses since startup\n\
+         # TYPE cerridwen_cache_misses_total counter\n\
+         cerridwen_cache_misses_total {cache_misses}\n\
+         # HELP cerridwen_requests_total Total HTTP requests handled\n\
+         # TYPE cerridwen_requests_total counter\n\
+         cerridwen_requests_total {total_reqs}\n\
+         # HELP cerridwen_rate_limit_rejections_total Requests rejected by the rate limiter\n\
+         # TYPE cerridwen_rate_limit_rejections_total counter\n\
+         cerridwen_rate_limit_rejections_total {rl_hits}\n\
+         # HELP cerridwen_responses_total Responses by status class\n\
+         # TYPE cerridwen_responses_total counter\n\
+         cerridwen_responses_total{{class=\"2xx\"}} {s2}\n\
+         cerridwen_responses_total{{class=\"3xx\"}} {s3}\n\
+         cerridwen_responses_total{{class=\"4xx\"}} {s4}\n\
+         cerridwen_responses_total{{class=\"5xx\"}} {s5}\n\
          # HELP cerridwen_build_info Static build info\n\
          # TYPE cerridwen_build_info gauge\n\
          cerridwen_build_info{{version=\"{ver}\"}} 1\n",
-        uptime = uptime,
-        cache_size = cache_size,
         ver = env!("CARGO_PKG_VERSION"),
     );
     let mut resp = (StatusCode::OK, body).into_response();
-    resp.headers_mut()
-        .insert("Content-Type", HeaderValue::from_static("text/plain; version=0.0.4"));
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/plain; version=0.0.4"),
+    );
     resp
 }
 
@@ -588,15 +769,22 @@ async fn favicon_endpoint() -> Response {
     // chatter when browsers autofetch /favicon.ico.
     let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#0e0e14"/><text x="16" y="22" font-size="20" text-anchor="middle" fill="#9b59b6">☽</text></svg>"##;
     let mut resp = (StatusCode::OK, svg.to_string()).into_response();
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("image/svg+xml"));
-    resp.headers_mut().insert("Cache-Control", HeaderValue::from_static("public, max-age=86400"));
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("image/svg+xml"));
+    resp.headers_mut().insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=86400"),
+    );
     resp
 }
 
 async fn app_endpoint() -> Response {
     let html = include_str!("../../../webapp/app.html");
     let mut resp = (StatusCode::OK, html.to_string()).into_response();
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     resp
 }
 
@@ -604,7 +792,10 @@ async fn chart_endpoint() -> Response {
     // Embedded at compile time; needs no static-file routing.
     let html = include_str!("../../../chart/chart.html");
     let mut resp = (StatusCode::OK, html.to_string()).into_response();
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     resp
 }
 
@@ -624,7 +815,10 @@ async fn docs_endpoint() -> Response {
 </rapi-doc>
 </body></html>"##;
     let mut resp = (StatusCode::OK, html.to_string()).into_response();
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
     resp
 }
 
@@ -644,13 +838,27 @@ fn openapi_spec() -> Value {
     };
     let date_param = p_string("date", "ISO 8601 timestamp or Julian Day decimal", false);
     let lat_param = p_number("latitude", "Observer latitude in degrees (-90..90)", false);
-    let long_param = p_number("longitude", "Observer longitude in degrees (-180..180)", false);
+    let long_param = p_number(
+        "longitude",
+        "Observer longitude in degrees (-180..180)",
+        false,
+    );
     let tz_param = p_string("tz", "IANA timezone name (e.g. Europe/Berlin)", false);
     let zodiac_param = p_string("zodiac", "tropical (default) or sidereal", false);
-    let ayan_param = p_string("ayanamsha", "lahiri/krishnamurti/fagan_bradley/raman/yukteshwar/...", false);
+    let ayan_param = p_string(
+        "ayanamsha",
+        "lahiri/krishnamurti/fagan_bradley/raman/yukteshwar/...",
+        false,
+    );
 
-    let common_params = json!([date_param, lat_param, long_param, tz_param,
-                              zodiac_param, ayan_param]);
+    let common_params = json!([
+        date_param,
+        lat_param,
+        long_param,
+        tz_param,
+        zodiac_param,
+        ayan_param
+    ]);
 
     json!({
         "openapi": "3.0.3",
@@ -723,10 +931,18 @@ fn openapi_spec() -> Value {
                 "get": {
                     "summary": "Instantaneous aspect grid between every pair of planets",
                     "parameters": json!([
-                        date_param, tz_param,
+                        date_param, tz_param, lat_param, long_param,
                         p_number("orb", "Orb in degrees (default 5)", false),
+                        p_string("include", "Roster opt-ins: comma-separated subset of nodes,asteroids,chiron,lilith", false),
+                        {"name":"include_angles","in":"query","required":false,
+                         "description":"Include Asc/MC as virtual bodies (requires latitude+longitude)",
+                         "schema":{"type":"boolean"}},
+                        p_string("house_system", "House system code/name when include_angles=1", false),
                     ]),
-                    "responses": { "200": { "description": "Aspect array" } }
+                    "responses": {
+                        "200": { "description": "Aspect array" },
+                        "400": { "description": "Bad request (e.g. include_angles=1 without observer)" }
+                    }
                 }
             },
             "/v1/transits": {
@@ -736,9 +952,68 @@ fn openapi_spec() -> Value {
                         p_string("natal_date", "ISO date or JD of natal chart", true),
                         p_string("transit_date", "ISO date or JD of transit moment (default now)", false),
                         p_number("orb", "Orb in degrees (default 1.5)", false),
+                        p_string("include", "Roster opt-ins: comma-separated subset of nodes,asteroids,chiron,lilith", false),
+                        {"name":"include_angles","in":"query","required":false,
+                         "description":"Include Asc/MC as virtual bodies (uses natal_latitude/natal_longitude and/or latitude/longitude)",
+                         "schema":{"type":"boolean"}},
+                        p_number("natal_latitude", "Natal observer latitude (for natal Asc/MC)", false),
+                        p_number("natal_longitude", "Natal observer longitude (for natal Asc/MC)", false),
+                        lat_param, long_param,
+                        p_string("house_system", "House system code/name when include_angles=1", false),
                         tz_param,
                     ]),
                     "responses": { "200": { "description": "Active aspects" } }
+                }
+            },
+            "/v1/stream/sun": {
+                "get": {
+                    "summary": "Server-Sent-Events stream pushing the Sun's position",
+                    "parameters": json!([
+                        p_number("interval", "Seconds between events (default 60, clamped 1..3600)", false),
+                        zodiac_param, ayan_param,
+                    ]),
+                    "responses": { "200": {
+                        "description": "text/event-stream with `position` events carrying JSON payloads",
+                        "content": {"text/event-stream": {}}
+                    } }
+                }
+            },
+            "/v1/stream/moon": {
+                "get": {
+                    "summary": "SSE stream of the Moon's position",
+                    "parameters": json!([
+                        p_number("interval", "Seconds between events (default 60)", false),
+                        zodiac_param, ayan_param,
+                    ]),
+                    "responses": { "200": { "description": "SSE stream" } }
+                }
+            },
+            "/v1/stream/body/{name}": {
+                "get": {
+                    "summary": "SSE stream of any body's position",
+                    "parameters": json!([
+                        {"name":"name","in":"path","required":true,
+                         "description":"sun/moon/.../north_node/lilith/chiron/ceres/...",
+                         "schema":{"type":"string"}},
+                        p_number("interval", "Seconds between events", false),
+                        zodiac_param, ayan_param,
+                    ]),
+                    "responses": { "200": { "description": "SSE stream" }, "404": { "description": "Unknown body" } }
+                }
+            },
+            "/health": {
+                "get": {
+                    "summary": "Liveness probe (uptime + build version)",
+                    "responses": { "200": { "description": "JSON status" } }
+                }
+            },
+            "/metrics": {
+                "get": {
+                    "summary": "Prometheus metrics exposition",
+                    "responses": { "200": {
+                        "description": "Prometheus exposition format",
+                        "content": {"text/plain": {}}
+                    } }
                 }
             },
             "/v1/star/{name}": {
@@ -824,16 +1099,27 @@ async fn aspects_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
     };
 
     // Optional opt-ins for the body roster.
-    let include_set: std::collections::HashSet<String> = q.get("include")
-        .map(|s| s.split(',').map(|x| x.trim().to_ascii_lowercase()).collect())
+    let include_set: std::collections::HashSet<String> = q
+        .get("include")
+        .map(|s| {
+            s.split(',')
+                .map(|x| x.trim().to_ascii_lowercase())
+                .collect()
+        })
         .unwrap_or_default();
     let mut bodies: Vec<i32> = default_transit_bodies().to_vec();
     use cerridwen::planets::{
         SE_CERES, SE_CHIRON, SE_JUNO, SE_MEAN_APOG, SE_MEAN_NODE, SE_PALLAS, SE_VESTA,
     };
-    if include_set.contains("nodes") { bodies.push(SE_MEAN_NODE); }
-    if include_set.contains("lilith") { bodies.push(SE_MEAN_APOG); }
-    if include_set.contains("chiron") { bodies.push(SE_CHIRON); }
+    if include_set.contains("nodes") {
+        bodies.push(SE_MEAN_NODE);
+    }
+    if include_set.contains("lilith") {
+        bodies.push(SE_MEAN_APOG);
+    }
+    if include_set.contains("chiron") {
+        bodies.push(SE_CHIRON);
+    }
     if include_set.contains("asteroids") {
         bodies.extend([SE_CERES, SE_PALLAS, SE_JUNO, SE_VESTA]);
     }
@@ -904,7 +1190,11 @@ async fn star_endpoint(
         Ok(x) => x,
         Err(e) => return bad_request(&e),
     };
-    let lon = if ayan != 0.0 { apply_ayanamsha(star.longitude, ayan) } else { star.longitude };
+    let lon = if ayan != 0.0 {
+        apply_ayanamsha(star.longitude, ayan)
+    } else {
+        star.longitude
+    };
     let pos = PlanetLongitude::new(lon);
 
     json_ok(json!({
@@ -955,9 +1245,12 @@ async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 
     let return_jd = match next_return(body_id, natal_jd, start_jd) {
         Some(j) => j,
-        None => return bad_request(&format!(
-            "no return found for {} within typical period", canonical
-        )),
+        None => {
+            return bad_request(&format!(
+                "no return found for {} within typical period",
+                canonical
+            ))
+        }
     };
 
     // Natal longitude for context.
@@ -1037,7 +1330,10 @@ async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
         let utc = jd_to_utc_basic(ev.jd);
         let utc_end = jd_to_utc_basic(ev.jd + 1.0 / 1440.0); // 1-minute event
         let title = format_event_summary(&ev.r#type, &ev.subtype, &ev.planet, &ev.data);
-        let uid = format!("cerridwen-{}-{}-{}-{}@cerridwen", ev.r#type, ev.planet, ev.data, ev.jd as i64);
+        let uid = format!(
+            "cerridwen-{}-{}-{}-{}@cerridwen",
+            ev.r#type, ev.planet, ev.data, ev.jd as i64
+        );
         ics.push_str("BEGIN:VEVENT\r\n");
         ics.push_str(&format!("UID:{}\r\n", uid));
         ics.push_str(&format!("DTSTAMP:{}\r\n", utc));
@@ -1054,8 +1350,12 @@ async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
     ics.push_str("END:VCALENDAR\r\n");
 
     let mut resp = (StatusCode::OK, ics).into_response();
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/calendar; charset=utf-8"));
-    resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/calendar; charset=utf-8"),
+    );
+    resp.headers_mut()
+        .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
     resp
 }
 
@@ -1066,7 +1366,7 @@ fn jd_to_utc_basic(jd: f64) -> String {
     // iso is "YYYY-MM-DD HH:MM:SS"
     let bytes = iso.as_bytes();
     if bytes.len() < 19 {
-        return format!("{}", iso);
+        return iso.to_string();
     }
     format!(
         "{}{}{}T{}{}{}Z",
@@ -1092,7 +1392,11 @@ fn format_event_summary(t: &str, st: &str, p: &str, d: &str) -> String {
         "rx" => format!("{} stations retrograde in {}", p, d),
         "direct" => format!("{} stations direct in {}", p, d),
         _ => {
-            let mode = if st.is_empty() { String::new() } else { format!(" {}", st) };
+            let mode = if st.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", st)
+            };
             format!("{} {}{} {}", p, t, mode, d)
         }
     }
@@ -1121,8 +1425,60 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         },
         None => 1.5,
     };
-    let bodies = default_transit_bodies();
-    let active = compute_transits(natal_jd, transit_jd, &bodies, orb);
+    // Optional roster opt-ins, mirroring /v1/aspects.
+    let include_set: std::collections::HashSet<String> = q
+        .get("include")
+        .map(|s| s.split(',').map(|x| x.trim().to_ascii_lowercase()).collect())
+        .unwrap_or_default();
+    let mut bodies: Vec<i32> = default_transit_bodies().to_vec();
+    use cerridwen::planets::{
+        SE_CERES, SE_CHIRON, SE_JUNO, SE_MEAN_APOG, SE_MEAN_NODE, SE_PALLAS, SE_VESTA,
+    };
+    if include_set.contains("nodes") { bodies.push(SE_MEAN_NODE); }
+    if include_set.contains("lilith") { bodies.push(SE_MEAN_APOG); }
+    if include_set.contains("chiron") { bodies.push(SE_CHIRON); }
+    if include_set.contains("asteroids") {
+        bodies.extend([SE_CERES, SE_PALLAS, SE_JUNO, SE_VESTA]);
+    }
+
+    // Optional angles (Asc/MC) opt-ins. Natal angles use natal_latitude /
+    // natal_longitude; transiting angles use the active observer (latitude /
+    // longitude). All are optional; if missing, skip that side.
+    let include_angles = parse_bool(q.get("include_angles"));
+    let mut natal_extras: Vec<(String, f64, f64)> = Vec::new();
+    let mut transit_extras: Vec<(String, f64, f64)> = Vec::new();
+    if include_angles {
+        let house_system = match q.get("house_system") {
+            Some(s) => match parse_house_system(s) {
+                Some(c) => c,
+                None => return bad_request(&format!("unknown house_system: {}", s)),
+            },
+            None => 'P',
+        };
+        let nlat = q.get("natal_latitude").and_then(|s| s.parse::<f64>().ok());
+        let nlon = q.get("natal_longitude").and_then(|s| s.parse::<f64>().ok());
+        let tlat = q.get("latitude").and_then(|s| s.parse::<f64>().ok());
+        let tlon = q.get("longitude").and_then(|s| s.parse::<f64>().ok());
+        if let (Some(la), Some(lo)) = (nlat, nlon) {
+            for (n, a, b) in angle_points(natal_jd, la, lo, house_system) {
+                natal_extras.push((format!("natal {}", n), a, b));
+            }
+        }
+        if let (Some(la), Some(lo)) = (tlat, tlon) {
+            for (n, a, b) in angle_points(transit_jd, la, lo, house_system) {
+                transit_extras.push((format!("transit {}", n), a, b));
+            }
+        }
+        if natal_extras.is_empty() && transit_extras.is_empty() {
+            return bad_request(
+                "include_angles=1 requires natal_latitude+natal_longitude \
+                 and/or latitude+longitude (for the transit moment)");
+        }
+    }
+
+    let active = compute_transits_extended(
+        natal_jd, transit_jd, &bodies, &natal_extras, &transit_extras, orb,
+    );
     let arr: Vec<Value> = active.iter().map(transit_to_json).collect();
     let mut o = serde_json::Map::new();
     o.insert("natal_jd".into(), json!(natal_jd));
@@ -1130,6 +1486,7 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
     o.insert("transit_jd".into(), json!(transit_jd));
     o.insert("transit_iso".into(), json!(jd2iso(transit_jd)));
     o.insert("orb".into(), json!(orb));
+    o.insert("include_angles".into(), json!(include_angles));
     o.insert("active".into(), json!(arr));
     json_ok(Value::Object(o))
 }
@@ -1178,9 +1535,12 @@ async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         None | Some("both") | Some("any") => (true, true),
         Some("solar") => (true, false),
         Some("lunar") => (false, true),
-        Some(other) => return bad_request(
-            &format!("type must be one of: solar, lunar, both. Got: {}", other)
-        ),
+        Some(other) => {
+            return bad_request(&format!(
+                "type must be one of: solar, lunar, both. Got: {}",
+                other
+            ))
+        }
     };
 
     let limit: usize = match q.get("limit") {
@@ -1244,11 +1604,15 @@ async fn houses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 }
 
 fn houses_to_json(h: &Houses, jd: f64) -> Value {
-    let cusps: Vec<Value> = h.cusps.iter()
-        .map(|&deg| json!({
-            "absolute_degrees": deg,
-            "sign": cerridwen::PlanetLongitude::new(deg).sign(),
-        }))
+    let cusps: Vec<Value> = h
+        .cusps
+        .iter()
+        .map(|&deg| {
+            json!({
+                "absolute_degrees": deg,
+                "sign": cerridwen::PlanetLongitude::new(deg).sign(),
+            })
+        })
         .collect();
     json!({
         "jd": jd,
@@ -1293,7 +1657,11 @@ async fn body_endpoint(
     };
 
     let trop_lon = planet.longitude_at(jd);
-    let lon = if ayan != 0.0 { apply_ayanamsha(trop_lon, ayan) } else { trop_lon };
+    let lon = if ayan != 0.0 {
+        apply_ayanamsha(trop_lon, ayan)
+    } else {
+        trop_lon
+    };
     let pos = PlanetLongitude::new(lon);
 
     let mut o = serde_json::Map::new();
@@ -1312,7 +1680,10 @@ async fn body_endpoint(
     o.insert("is_rx".into(), json!(planet.is_rx(None)));
     o.insert("is_stationing".into(), json!(planet.is_stationing(None)));
     o.insert("illumination".into(), json!(planet.illumination(None)));
-    o.insert("mean_orbital_period".into(), json!(planet.mean_orbital_period()));
+    o.insert(
+        "mean_orbital_period".into(),
+        json!(planet.mean_orbital_period()),
+    );
     o.insert(
         "relative_orbital_velocity".into(),
         json!(planet.relative_orbital_velocity()),
@@ -1325,10 +1696,22 @@ async fn body_endpoint(
     if latlong.is_some() {
         // Build a fresh Planet with the observer set so rise/set work.
         let with_observer = Planet::new(planet.id, Some(jd), latlong);
-        o.insert("next_rise".into(), planet_event_to_json(&with_observer.next_rise()));
-        o.insert("next_set".into(), planet_event_to_json(&with_observer.next_set()));
-        o.insert("last_rise".into(), planet_event_to_json(&with_observer.last_rise()));
-        o.insert("last_set".into(), planet_event_to_json(&with_observer.last_set()));
+        o.insert(
+            "next_rise".into(),
+            planet_event_to_json(&with_observer.next_rise()),
+        );
+        o.insert(
+            "next_set".into(),
+            planet_event_to_json(&with_observer.next_set()),
+        );
+        o.insert(
+            "last_rise".into(),
+            planet_event_to_json(&with_observer.last_rise()),
+        );
+        o.insert(
+            "last_set".into(),
+            planet_event_to_json(&with_observer.last_set()),
+        );
     }
 
     json_ok(Value::Object(o))
@@ -1434,7 +1817,10 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
         obj.insert("delta_days".into(), json!(ev.delta_days));
 
         if let Some(p) = body_for(&ev.planet, ev.jd) {
-            obj.insert("position".into(), planet_longitude_to_json(&p.position(None)));
+            obj.insert(
+                "position".into(),
+                planet_longitude_to_json(&p.position(None)),
+            );
             if ASPECTS.iter().any(|a| a.name == ev.r#type) {
                 if let Some(p2) = body_for(&ev.data, ev.jd) {
                     obj.insert(
@@ -1461,9 +1847,15 @@ fn parse_observer_and_jd(
         Some(s) => Some(parse_jd_or_iso_date_in_tz(s, tz)?),
         None => None,
     };
-    let lat = q.get("latitude").map(|s| s.parse::<f64>()).transpose()
+    let lat = q
+        .get("latitude")
+        .map(|s| s.parse::<f64>())
+        .transpose()
         .map_err(|e| format!("invalid latitude: {}", e))?;
-    let long = q.get("longitude").map(|s| s.parse::<f64>()).transpose()
+    let long = q
+        .get("longitude")
+        .map(|s| s.parse::<f64>())
+        .transpose()
         .map_err(|e| format!("invalid longitude: {}", e))?;
     let latlong = match (lat, long) {
         (Some(la), Some(lo)) => Some(LatLong::new(la, lo).map_err(|s| s.to_string())?),
@@ -1501,10 +1893,15 @@ fn body_for(name: &str, jd: f64) -> Option<Planet> {
 }
 
 fn json_ok(v: Value) -> Response {
-    let mut resp = (StatusCode::OK, serde_json::to_string_pretty(&v).unwrap_or_default())
+    let mut resp = (
+        StatusCode::OK,
+        serde_json::to_string_pretty(&v).unwrap_or_default(),
+    )
         .into_response();
-    resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+    resp.headers_mut()
+        .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("application/json"));
     resp
 }
 
@@ -1518,8 +1915,10 @@ fn not_found(msg: &str) -> Response {
 
 fn error_response(status: StatusCode, msg: &str) -> Response {
     let mut resp = (status, msg.to_string()).into_response();
-    resp.headers_mut().insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
-    resp.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
+    resp.headers_mut()
+        .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("text/plain"));
     resp
 }
 
@@ -1569,11 +1968,21 @@ fn sun_data_to_json(d: &SunData, ayan: f64, ayan_name: &str) -> Value {
         "relative_orbital_velocity".into(),
         json!(d.relative_orbital_velocity),
     );
-    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_rise { o.insert("next_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_set  { o.insert("next_set".into(),  planet_event_to_json(e)); }
-    if let Some(e) = &d.last_rise { o.insert("last_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.last_set  { o.insert("last_set".into(),  planet_event_to_json(e)); }
+    if let Some(e) = &d.next_event {
+        o.insert("next_event".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_rise {
+        o.insert("next_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_set {
+        o.insert("next_set".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_rise {
+        o.insert("last_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_set {
+        o.insert("last_set".into(), planet_event_to_json(e));
+    }
     Value::Object(o)
 }
 
@@ -1612,16 +2021,44 @@ fn moon_data_to_json(d: &MoonData, ayan: f64, ayan_name: &str) -> Value {
         json!(d.relative_orbital_velocity),
     );
     o.insert("lunation_number".into(), json!(d.lunation_number));
-    o.insert("void_of_course".into(), void_of_course_to_json(&d.void_of_course));
-    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
-    o.insert("next_new_moon".into(), planet_event_to_json(&d.next_new_moon));
-    o.insert("next_full_moon".into(), planet_event_to_json(&d.next_full_moon));
-    o.insert("next_new_or_full_moon".into(), planet_event_to_json(&d.next_new_or_full_moon));
-    o.insert("last_new_moon".into(), planet_event_to_json(&d.last_new_moon));
-    o.insert("last_full_moon".into(), planet_event_to_json(&d.last_full_moon));
-    if let Some(e) = &d.next_rise { o.insert("next_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_set  { o.insert("next_set".into(),  planet_event_to_json(e)); }
-    if let Some(e) = &d.last_rise { o.insert("last_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.last_set  { o.insert("last_set".into(),  planet_event_to_json(e)); }
+    o.insert(
+        "void_of_course".into(),
+        void_of_course_to_json(&d.void_of_course),
+    );
+    if let Some(e) = &d.next_event {
+        o.insert("next_event".into(), planet_event_to_json(e));
+    }
+    o.insert(
+        "next_new_moon".into(),
+        planet_event_to_json(&d.next_new_moon),
+    );
+    o.insert(
+        "next_full_moon".into(),
+        planet_event_to_json(&d.next_full_moon),
+    );
+    o.insert(
+        "next_new_or_full_moon".into(),
+        planet_event_to_json(&d.next_new_or_full_moon),
+    );
+    o.insert(
+        "last_new_moon".into(),
+        planet_event_to_json(&d.last_new_moon),
+    );
+    o.insert(
+        "last_full_moon".into(),
+        planet_event_to_json(&d.last_full_moon),
+    );
+    if let Some(e) = &d.next_rise {
+        o.insert("next_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_set {
+        o.insert("next_set".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_rise {
+        o.insert("last_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_set {
+        o.insert("last_set".into(), planet_event_to_json(e));
+    }
     Value::Object(o)
 }

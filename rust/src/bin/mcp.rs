@@ -13,8 +13,8 @@ use cerridwen::{
     apply_ayanamsha, compute_aspects_at, compute_ayanamsha, compute_houses, compute_moon_data_with,
     compute_sun_data, compute_transits, default_transit_bodies, eclipses_within_period, fixed_star,
     jd2iso, jd_now, next_return, parse_ayanamsha, parse_house_system, parse_jd_or_iso_date_in_tz,
-    ActiveTransit, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData,
-    PlanetEvent, PlanetLongitude, SunData, VoidOfCourseData,
+    ActiveTransit, Eclipse, Houses, LatLong, MoonData, MoonOptions, MoonPhaseData, PlanetEvent,
+    PlanetLongitude, SunData, VoidOfCourseData,
 };
 use serde_json::{json, Value};
 
@@ -32,7 +32,7 @@ fn main() {
     loop {
         line.clear();
         match stdin_lock.read_line(&mut line) {
-            Ok(0) => break,                          // EOF
+            Ok(0) => break, // EOF
             Ok(_) => {}
             Err(e) => {
                 eprintln!("cerridwen-mcp: stdin error: {}", e);
@@ -234,7 +234,8 @@ fn tool_def(name: &str, description: &str, schema: Value) -> Value {
 }
 
 fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
-    let name = params.get("name")
+    let name = params
+        .get("name")
         .and_then(|v| v.as_str())
         .ok_or((-32602, "missing tool name".to_string()))?;
     let args = params.get("arguments").cloned().unwrap_or(json!({}));
@@ -291,7 +292,10 @@ fn parse_observer(args: &Value) -> Result<Option<LatLong>, (i64, String)> {
             LatLong::new(la, lo).map_err(|e| (-32602, e.to_string()))?,
         )),
         (None, None) => Ok(None),
-        _ => Err((-32602, "must specify both latitude and longitude or neither".to_string())),
+        _ => Err((
+            -32602,
+            "must specify both latitude and longitude or neither".to_string(),
+        )),
     }
 }
 fn parse_zodiac(args: &Value, jd: f64) -> Result<(f64, &'static str), (i64, String)> {
@@ -304,7 +308,10 @@ fn parse_zodiac(args: &Value, jd: f64) -> Result<(f64, &'static str), (i64, Stri
                 .ok_or_else(|| (-32602, format!("unknown ayanamsha: {}", name)))?;
             Ok((compute_ayanamsha(jd, mode), label))
         }
-        Some(other) => Err((-32602, format!("zodiac must be tropical or sidereal: {}", other))),
+        Some(other) => Err((
+            -32602,
+            format!("zodiac must be tropical or sidereal: {}", other),
+        )),
     }
 }
 
@@ -340,17 +347,20 @@ fn tool_get_moon(args: &Value) -> Result<Value, (i64, String)> {
 }
 
 fn tool_get_body(args: &Value) -> Result<Value, (i64, String)> {
-    let name_in = arg_str(args, "name")
-        .ok_or((-32602, "missing 'name'".to_string()))?;
+    let name_in = arg_str(args, "name").ok_or((-32602, "missing 'name'".to_string()))?;
     let canonical = canonical_body_name(name_in)
         .ok_or_else(|| (-32602, format!("unknown body: {}", name_in)))?;
     let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
     let observer = parse_observer(args)?;
-    let planet = body_for(canonical, jd)
-        .ok_or_else(|| (-32602, format!("unknown body: {}", name_in)))?;
+    let planet =
+        body_for(canonical, jd).ok_or_else(|| (-32602, format!("unknown body: {}", name_in)))?;
     let (ayan, ayan_name) = parse_zodiac(args, jd)?;
     let trop_lon = planet.longitude_at(jd);
-    let lon = if ayan != 0.0 { apply_ayanamsha(trop_lon, ayan) } else { trop_lon };
+    let lon = if ayan != 0.0 {
+        apply_ayanamsha(trop_lon, ayan)
+    } else {
+        trop_lon
+    };
     let pos = PlanetLongitude::new(lon);
     let mut o = serde_json::Map::new();
     o.insert("jd".into(), json!(jd));
@@ -368,26 +378,39 @@ fn tool_get_body(args: &Value) -> Result<Value, (i64, String)> {
     o.insert("is_rx".into(), json!(planet.is_rx(None)));
     o.insert("is_stationing".into(), json!(planet.is_stationing(None)));
     o.insert("illumination".into(), json!(planet.illumination(None)));
-    o.insert("mean_orbital_period".into(), json!(planet.mean_orbital_period()));
-    o.insert("relative_orbital_velocity".into(), json!(planet.relative_orbital_velocity()));
+    o.insert(
+        "mean_orbital_period".into(),
+        json!(planet.mean_orbital_period()),
+    );
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(planet.relative_orbital_velocity()),
+    );
     if let Some(ev) = planet.next_event() {
         o.insert("next_event".into(), planet_event_to_json(&ev));
     }
     if let Some(ll) = observer {
         let with_observer = Planet::new(planet.id, Some(jd), Some(ll));
-        o.insert("next_rise".into(), planet_event_to_json(&with_observer.next_rise()));
-        o.insert("next_set".into(), planet_event_to_json(&with_observer.next_set()));
+        o.insert(
+            "next_rise".into(),
+            planet_event_to_json(&with_observer.next_rise()),
+        );
+        o.insert(
+            "next_set".into(),
+            planet_event_to_json(&with_observer.next_set()),
+        );
     }
     Ok(Value::Object(o))
 }
 
 fn tool_get_houses(args: &Value) -> Result<Value, (i64, String)> {
-    let observer = parse_observer(args)?
-        .ok_or((-32602, "latitude and longitude are required".to_string()))?;
+    let observer =
+        parse_observer(args)?.ok_or((-32602, "latitude and longitude are required".to_string()))?;
     let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
     let system = match arg_str(args, "house_system") {
-        Some(s) => parse_house_system(s)
-            .ok_or_else(|| (-32602, format!("unknown house_system: {}", s)))?,
+        Some(s) => {
+            parse_house_system(s).ok_or_else(|| (-32602, format!("unknown house_system: {}", s)))?
+        }
         None => 'P',
     };
     let h = compute_houses(jd, observer.lat, observer.long, system);
@@ -397,9 +420,15 @@ fn tool_get_houses(args: &Value) -> Result<Value, (i64, String)> {
 fn tool_get_eclipses(args: &Value) -> Result<Value, (i64, String)> {
     let jd_start = parse_date_arg(args, "date_start")?.unwrap_or_else(jd_now);
     let jd_end = match (arg_str(args, "date_end"), arg_num(args, "lookahead")) {
-        (Some(_), Some(_)) => return Err((-32602, "specify date_end or lookahead, not both".to_string())),
-        (Some(s), None) => parse_jd_or_iso_date_in_tz(s, arg_str(args, "tz"))
-            .map_err(|e| (-32602, e))?,
+        (Some(_), Some(_)) => {
+            return Err((
+                -32602,
+                "specify date_end or lookahead, not both".to_string(),
+            ))
+        }
+        (Some(s), None) => {
+            parse_jd_or_iso_date_in_tz(s, arg_str(args, "tz")).map_err(|e| (-32602, e))?
+        }
         (None, Some(d)) if d >= 0.0 => jd_start + d,
         (None, Some(_)) => return Err((-32602, "lookahead must be non-negative".to_string())),
         (None, None) => jd_start + 365.0,
@@ -413,7 +442,10 @@ fn tool_get_eclipses(args: &Value) -> Result<Value, (i64, String)> {
     };
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
     let eclipses = eclipses_within_period(jd_start, jd_end, solar, lunar, limit);
-    Ok(json!(eclipses.iter().map(eclipse_to_json).collect::<Vec<_>>()))
+    Ok(json!(eclipses
+        .iter()
+        .map(eclipse_to_json)
+        .collect::<Vec<_>>()))
 }
 
 fn tool_get_transits(args: &Value) -> Result<Value, (i64, String)> {
@@ -437,8 +469,7 @@ fn tool_get_transits(args: &Value) -> Result<Value, (i64, String)> {
 }
 
 fn tool_get_return(args: &Value) -> Result<Value, (i64, String)> {
-    let body_name = arg_str(args, "body")
-        .ok_or((-32602, "body is required".to_string()))?;
+    let body_name = arg_str(args, "body").ok_or((-32602, "body is required".to_string()))?;
     let canonical = canonical_body_name(body_name)
         .ok_or_else(|| (-32602, format!("unknown body: {}", body_name)))?;
     let body_id = body_for(canonical, 0.0)
@@ -485,12 +516,15 @@ fn tool_get_aspects(args: &Value) -> Result<Value, (i64, String)> {
 }
 
 fn tool_get_star(args: &Value) -> Result<Value, (i64, String)> {
-    let name = arg_str(args, "name")
-        .ok_or((-32602, "name is required".to_string()))?;
+    let name = arg_str(args, "name").ok_or((-32602, "name is required".to_string()))?;
     let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
     let star = fixed_star(name, jd).map_err(|e| (-32603, e))?;
     let (ayan, ayan_name) = parse_zodiac(args, jd)?;
-    let lon = if ayan != 0.0 { apply_ayanamsha(star.longitude, ayan) } else { star.longitude };
+    let lon = if ayan != 0.0 {
+        apply_ayanamsha(star.longitude, ayan)
+    } else {
+        star.longitude
+    };
     let pos = PlanetLongitude::new(lon);
     Ok(json!({
         "name": star.name,
@@ -511,9 +545,15 @@ fn tool_get_events(args: &Value) -> Result<Value, (i64, String)> {
     let dbfile = std::env::var("CERRIDWEN_EVENTS_DB").unwrap_or_else(|_| "events.db".into());
     let jd_start = parse_date_arg(args, "date_start")?.unwrap_or_else(jd_now);
     let jd_end = match (arg_str(args, "date_end"), arg_num(args, "lookahead")) {
-        (Some(_), Some(_)) => return Err((-32602, "specify date_end or lookahead, not both".to_string())),
-        (Some(s), None) => parse_jd_or_iso_date_in_tz(s, arg_str(args, "tz"))
-            .map_err(|e| (-32602, e))?,
+        (Some(_), Some(_)) => {
+            return Err((
+                -32602,
+                "specify date_end or lookahead, not both".to_string(),
+            ))
+        }
+        (Some(s), None) => {
+            parse_jd_or_iso_date_in_tz(s, arg_str(args, "tz")).map_err(|e| (-32602, e))?
+        }
         (None, Some(d)) if d >= 0.0 => jd_start + d,
         (None, Some(_)) => return Err((-32602, "lookahead must be non-negative".to_string())),
         (None, None) => jd_start + 30.0,
@@ -530,15 +570,20 @@ fn tool_get_events(args: &Value) -> Result<Value, (i64, String)> {
     };
     let events = get_events(&dbfile, jd_start, jd_end, limit, &filter)
         .map_err(|e| (-32603, format!("event query failed: {}", e)))?;
-    let arr: Vec<Value> = events.iter().map(|e| json!({
-        "jd": e.jd,
-        "iso_date": e.iso_date,
-        "type": e.r#type,
-        "subtype": e.subtype,
-        "planet": e.planet,
-        "data": e.data,
-        "delta_days": e.delta_days,
-    })).collect();
+    let arr: Vec<Value> = events
+        .iter()
+        .map(|e| {
+            json!({
+                "jd": e.jd,
+                "iso_date": e.iso_date,
+                "type": e.r#type,
+                "subtype": e.subtype,
+                "planet": e.planet,
+                "data": e.data,
+                "delta_days": e.delta_days,
+            })
+        })
+        .collect();
     Ok(Value::Array(arr))
 }
 
@@ -643,11 +688,15 @@ fn void_of_course_to_json(v: &VoidOfCourseData) -> Value {
 }
 
 fn houses_to_json(h: &Houses, jd: f64) -> Value {
-    let cusps: Vec<Value> = h.cusps.iter()
-        .map(|&deg| json!({
-            "absolute_degrees": deg,
-            "sign": PlanetLongitude::new(deg).sign(),
-        }))
+    let cusps: Vec<Value> = h
+        .cusps
+        .iter()
+        .map(|&deg| {
+            json!({
+                "absolute_degrees": deg,
+                "sign": PlanetLongitude::new(deg).sign(),
+            })
+        })
         .collect();
     json!({
         "jd": jd,
@@ -671,17 +720,32 @@ fn sun_data_to_json(d: &SunData, ayan: f64, ayan_name: &str) -> Value {
     o.insert("jd".into(), json!(d.jd));
     o.insert("iso_date".into(), json!(d.iso_date));
     o.insert("zodiac".into(), json!(ayan_name));
-    if ayan != 0.0 { o.insert("ayanamsha_degrees".into(), json!(ayan)); }
+    if ayan != 0.0 {
+        o.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
     let pos = shift_longitude(&d.position, ayan);
     o.insert("position".into(), planet_longitude_to_json(&pos));
     o.insert("dignity".into(), json!(d.dignity));
     o.insert("mean_orbital_period".into(), json!(d.mean_orbital_period));
-    o.insert("relative_orbital_velocity".into(), json!(d.relative_orbital_velocity));
-    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_rise { o.insert("next_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_set  { o.insert("next_set".into(),  planet_event_to_json(e)); }
-    if let Some(e) = &d.last_rise { o.insert("last_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.last_set  { o.insert("last_set".into(),  planet_event_to_json(e)); }
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(d.relative_orbital_velocity),
+    );
+    if let Some(e) = &d.next_event {
+        o.insert("next_event".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_rise {
+        o.insert("next_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_set {
+        o.insert("next_set".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_rise {
+        o.insert("last_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_set {
+        o.insert("last_set".into(), planet_event_to_json(e));
+    }
     Value::Object(o)
 }
 
@@ -690,7 +754,9 @@ fn moon_data_to_json(d: &MoonData, ayan: f64, ayan_name: &str) -> Value {
     o.insert("jd".into(), json!(d.jd));
     o.insert("iso_date".into(), json!(d.iso_date));
     o.insert("zodiac".into(), json!(ayan_name));
-    if ayan != 0.0 { o.insert("ayanamsha_degrees".into(), json!(ayan)); }
+    if ayan != 0.0 {
+        o.insert("ayanamsha_degrees".into(), json!(ayan));
+    }
     let pos = shift_longitude(&d.position, ayan);
     o.insert("position".into(), planet_longitude_to_json(&pos));
     o.insert("phase".into(), moon_phase_to_json(&d.phase));
@@ -704,19 +770,50 @@ fn moon_data_to_json(d: &MoonData, ayan: f64, ayan_name: &str) -> Value {
     o.insert("period_length".into(), json!(d.period_length));
     o.insert("dignity".into(), json!(d.dignity));
     o.insert("mean_orbital_period".into(), json!(d.mean_orbital_period));
-    o.insert("relative_orbital_velocity".into(), json!(d.relative_orbital_velocity));
+    o.insert(
+        "relative_orbital_velocity".into(),
+        json!(d.relative_orbital_velocity),
+    );
     o.insert("lunation_number".into(), json!(d.lunation_number));
-    o.insert("void_of_course".into(), void_of_course_to_json(&d.void_of_course));
-    if let Some(e) = &d.next_event { o.insert("next_event".into(), planet_event_to_json(e)); }
-    o.insert("next_new_moon".into(), planet_event_to_json(&d.next_new_moon));
-    o.insert("next_full_moon".into(), planet_event_to_json(&d.next_full_moon));
-    o.insert("next_new_or_full_moon".into(), planet_event_to_json(&d.next_new_or_full_moon));
-    o.insert("last_new_moon".into(), planet_event_to_json(&d.last_new_moon));
-    o.insert("last_full_moon".into(), planet_event_to_json(&d.last_full_moon));
-    if let Some(e) = &d.next_rise { o.insert("next_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.next_set  { o.insert("next_set".into(),  planet_event_to_json(e)); }
-    if let Some(e) = &d.last_rise { o.insert("last_rise".into(), planet_event_to_json(e)); }
-    if let Some(e) = &d.last_set  { o.insert("last_set".into(),  planet_event_to_json(e)); }
+    o.insert(
+        "void_of_course".into(),
+        void_of_course_to_json(&d.void_of_course),
+    );
+    if let Some(e) = &d.next_event {
+        o.insert("next_event".into(), planet_event_to_json(e));
+    }
+    o.insert(
+        "next_new_moon".into(),
+        planet_event_to_json(&d.next_new_moon),
+    );
+    o.insert(
+        "next_full_moon".into(),
+        planet_event_to_json(&d.next_full_moon),
+    );
+    o.insert(
+        "next_new_or_full_moon".into(),
+        planet_event_to_json(&d.next_new_or_full_moon),
+    );
+    o.insert(
+        "last_new_moon".into(),
+        planet_event_to_json(&d.last_new_moon),
+    );
+    o.insert(
+        "last_full_moon".into(),
+        planet_event_to_json(&d.last_full_moon),
+    );
+    if let Some(e) = &d.next_rise {
+        o.insert("next_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.next_set {
+        o.insert("next_set".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_rise {
+        o.insert("last_rise".into(), planet_event_to_json(e));
+    }
+    if let Some(e) = &d.last_set {
+        o.insert("last_set".into(), planet_event_to_json(e));
+    }
     Value::Object(o)
 }
 

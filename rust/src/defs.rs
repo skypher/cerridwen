@@ -47,13 +47,29 @@ const DEXTER_ASPECTS: &[(f64, &str)] = &[
 
 pub static ASPECTS: Lazy<Vec<Aspect>> = Lazy::new(|| {
     let mut v = Vec::with_capacity(2 + DEXTER_ASPECTS.len() * 2);
-    v.push(Aspect { angle: 0.0, name: "conjunction", mode: None });
+    v.push(Aspect {
+        angle: 0.0,
+        name: "conjunction",
+        mode: None,
+    });
     for (a, n) in DEXTER_ASPECTS {
-        v.push(Aspect { angle: *a, name: n, mode: Some("dexter") });
+        v.push(Aspect {
+            angle: *a,
+            name: n,
+            mode: Some("dexter"),
+        });
     }
-    v.push(Aspect { angle: 180.0, name: "opposition", mode: None });
+    v.push(Aspect {
+        angle: 180.0,
+        name: "opposition",
+        mode: None,
+    });
     for (a, n) in DEXTER_ASPECTS.iter().rev() {
-        v.push(Aspect { angle: 360.0 - *a, name: n, mode: Some("sinister") });
+        v.push(Aspect {
+            angle: 360.0 - *a,
+            name: n,
+            mode: Some("sinister"),
+        });
     }
     v
 });
@@ -84,7 +100,9 @@ pub fn ephe_path() -> PathBuf {
     }
     let candidates = [
         std::env::current_dir().ok().map(|d| d.join("sweph")),
-        std::env::current_dir().ok().and_then(|d| d.parent().map(|p| p.join("sweph"))),
+        std::env::current_dir()
+            .ok()
+            .and_then(|d| d.parent().map(|p| p.join("sweph"))),
     ];
     for c in candidates.iter().flatten() {
         if c.exists() {

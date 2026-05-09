@@ -10,6 +10,7 @@ use crate::defs::{DEBUG_EVENT_APPROXIMATION, MAXIMUM_ERROR, MAX_DATA_POINTS};
 ///   without further refinement; returning false discards the candidate.
 /// * `distance_function` decides whether the value near a candidate has
 ///   stabilised; once below `MAXIMUM_ERROR` we stop recursing.
+#[allow(clippy::too_many_arguments)]
 pub fn approximate_event_date<E, F, M, D>(
     jd_start: f64,
     jd_end: f64,

@@ -10,7 +10,7 @@
 # Run:
 #   docker run -p 2828:2828 cerridwen
 
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.88-bookworm AS builder
 
 # bindgen needs libclang.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,6 +36,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         libsqlite3-0 \
+        wget \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 1000 -d /app -m cerridwen
 
@@ -51,7 +52,10 @@ USER cerridwen
 
 EXPOSE 2828
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD ["sh", "-c", "wget -q -O - http://127.0.0.1:2828/health >/dev/null"]
+  CMD wget -q -O - http://127.0.0.1:2828/health >/dev/null || exit 1
 
 ENTRYPOINT ["cerridwen-server"]
-CMD ["--port", "2828"]
+# Bind to all interfaces inside the container so the host's port
+# publish (`-p 2828:2828`) can reach the listener. Override --bind
+# at run-time if needed.
+CMD ["--bind", "0.0.0.0", "--port", "2828"]

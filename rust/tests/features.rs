@@ -2,13 +2,14 @@
 //! eclipses, transits, returns, stars, ayanamshas, time-zones.
 
 use approx::assert_abs_diff_eq;
+use cerridwen::planets::Planet;
 use cerridwen::utils::{iso2jd, jd2iso, parse_jd_or_iso_date_in_tz};
 use cerridwen::{
     apply_ayanamsha, compute_ayanamsha, compute_houses, compute_transits, default_transit_bodies,
     eclipses_within_period, fixed_star, next_return, parse_ayanamsha, parse_house_system,
-    EclipseKind, EclipseSearch, planets::{next_eclipse, SE_MOON, SE_SUN, SE_MEAN_NODE, SE_CHIRON, SE_CERES, SE_MEAN_APOG},
+    planets::{next_eclipse, SE_CERES, SE_CHIRON, SE_MEAN_APOG, SE_MEAN_NODE, SE_MOON, SE_SUN},
+    EclipseKind, EclipseSearch,
 };
-use cerridwen::planets::Planet;
 
 // ----------------------- bodies (nodes / Lilith / asteroids) ------------------
 
@@ -113,9 +114,14 @@ fn transits_orb_bound() {
     let bodies = default_transit_bodies();
     let active = compute_transits(natal, natal + 9000.0, &bodies, 1.5);
     for t in &active {
-        assert!(t.orb_distance <= 1.5 + 1e-9,
-                "{} {} {} orb={}",
-                t.transit_body, t.aspect_name, t.natal_body, t.orb_distance);
+        assert!(
+            t.orb_distance <= 1.5 + 1e-9,
+            "{} {} {} orb={}",
+            t.transit_body,
+            t.aspect_name,
+            t.natal_body,
+            t.orb_distance
+        );
     }
 }
 
@@ -135,7 +141,11 @@ fn next_solar_eclipse_after_2026_05_01() {
 fn eclipses_within_period_returns_chronological() {
     let start = iso2jd("2026-01-01T00:00:00").unwrap();
     let list = eclipses_within_period(start, start + 730.0, true, true, 12);
-    assert!(list.len() >= 4, "expected multiple eclipses, got {}", list.len());
+    assert!(
+        list.len() >= 4,
+        "expected multiple eclipses, got {}",
+        list.len()
+    );
     for w in list.windows(2) {
         assert!(w[0].max_jd <= w[1].max_jd);
     }
@@ -151,7 +161,7 @@ fn solar_return_within_year() {
     let yrs = days / 365.25;
     let frac = yrs - yrs.floor();
     // Should land within a couple of days of an integer year multiple.
-    assert!(frac < 0.01 || frac > 0.99, "delta yrs={}", yrs);
+    assert!(!(0.01..=0.99).contains(&frac), "delta yrs={}", yrs);
 }
 
 #[test]
@@ -169,8 +179,11 @@ fn sirius_in_cancer() {
     let s = fixed_star("Sirius", 2461167.0).expect("Sirius");
     let cancer_start = 90.0_f64;
     let cancer_end = 120.0_f64;
-    assert!(s.longitude > cancer_start && s.longitude < cancer_end,
-            "Sirius lon = {}", s.longitude);
+    assert!(
+        s.longitude > cancer_start && s.longitude < cancer_end,
+        "Sirius lon = {}",
+        s.longitude
+    );
     assert_abs_diff_eq!(s.magnitude, -1.46, epsilon = 0.01);
 }
 

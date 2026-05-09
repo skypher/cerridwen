@@ -92,7 +92,6 @@ fn naive_to_jd(ndt: NaiveDateTime) -> f64 {
     )
 }
 
-
 /// Accept either a Julian day decimal string or an ISO 8601 UTC timestamp.
 pub fn parse_jd_or_iso_date(date: &str) -> Result<f64, String> {
     parse_jd_or_iso_date_in_tz(date, None)
@@ -109,7 +108,8 @@ pub fn parse_jd_or_iso_date_in_tz(date: &str, tz: Option<&str>) -> Result<f64, S
     }
     match tz {
         Some(tzname) => {
-            let zone: chrono_tz::Tz = tzname.parse()
+            let zone: chrono_tz::Tz = tzname
+                .parse()
                 .map_err(|_| format!("unknown timezone: {}", tzname))?;
             iso2jd_in_tz(date, zone)
         }
@@ -131,7 +131,11 @@ fn iso2jd_in_tz(iso: &str, tz: chrono_tz::Tz) -> Result<f64, String> {
                 chrono::LocalResult::Single(d) => d,
                 chrono::LocalResult::Ambiguous(a, _) => a, // pick earliest
                 chrono::LocalResult::None => {
-                    return Err(format!("local time {} does not exist in {}", iso, tz.name()));
+                    return Err(format!(
+                        "local time {} does not exist in {}",
+                        iso,
+                        tz.name()
+                    ));
                 }
             };
             let utc: DateTime<Utc> = local.with_timezone(&Utc);
@@ -143,7 +147,9 @@ fn iso2jd_in_tz(iso: &str, tz: chrono_tz::Tz) -> Result<f64, String> {
     }
     if let Ok(d) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
         let ndt = NaiveDateTime::new(d, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
-        let local = tz.from_local_datetime(&ndt).single()
+        let local = tz
+            .from_local_datetime(&ndt)
+            .single()
             .ok_or_else(|| format!("ambiguous local date {} in {}", iso, tz.name()))?;
         let utc: DateTime<Utc> = local.with_timezone(&Utc);
         let secs = utc.timestamp() - 946_728_000;

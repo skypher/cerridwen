@@ -1,5 +1,9 @@
 # cerridwen — Rust port
 
+[![CI](https://github.com/skypher/cerridwen/actions/workflows/ci.yml/badge.svg)](https://github.com/skypher/cerridwen/actions/workflows/ci.yml)
+![License: MIT + AGPL-3.0](https://img.shields.io/badge/license-MIT%20%2B%20AGPL--3.0-blue.svg)
+![Rust stable](https://img.shields.io/badge/rust-stable-orange.svg)
+
 Geocentric Sun/Moon/planet data backed by Swiss Ephemeris.
 A Rust port (and substantial superset) of the original Python `cerridwen`.
 

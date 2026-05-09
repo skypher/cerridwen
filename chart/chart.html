@@ -81,12 +81,15 @@
       const lat = document.getElementById('lat').value;
       const long = document.getElementById('long').value;
       const hsys = document.getElementById('house').value;
-      const olivier = await fetch(`/v1/olivier?latitude=${lat}&longitude=${long}&house_system=${hsys}`).then(r => r.json());
-      const houses = await fetch(`/v1/houses?latitude=${lat}&longitude=${long}&house_system=${hsys}`).then(r => r.json());
-      return { olivier, houses };
+      const qs = `latitude=${lat}&longitude=${long}&house_system=${hsys}`;
+      const olivier = await fetch(`/v1/olivier?${qs}`).then(r => r.json());
+      const houses = await fetch(`/v1/houses?${qs}`).then(r => r.json());
+      const aspectsResp = await fetch(`/v1/aspects?orb=6`)
+        .then(r => r.json()).catch(() => ({ aspects: [] }));
+      return { olivier, houses, aspectsResp };
     }
 
-    function render({ olivier, houses }) {
+    function render({ olivier, houses, aspectsResp }) {
       const svg = document.getElementById('wheel');
       const parts = [];
       parts.push(`<circle cx="0" cy="0" r="310" fill="none" stroke="#888" stroke-width="1.5"/>`);
@@ -123,10 +126,32 @@
         const [tx, ty] = polar(70, deg + 1.5);
         parts.push(`<text x="${tx}" y="${ty+4}" font-size="10" fill="#888">${i+1}</text>`);
       });
+      // Aspect lines (under glyphs).
+      const ASPECT_COLOR = {
+        conjunction: '#bdc3c7', opposition: '#e74c3c', square: '#e74c3c',
+        trine: '#3498db', sextile: '#27ae60',
+      };
+      const SWE_NAME_TO_OLIVIER = {
+        'Sun':'sun','Moon':'moon','Mercury':'mercury','Venus':'venus',
+        'Mars':'mars','Jupiter':'jupiter','Saturn':'saturn',
+        'Uranus':'uranus','Neptune':'neptune','Pluto':'pluto',
+      };
+      ((aspectsResp || {}).aspects || []).forEach(a => {
+        const ka = SWE_NAME_TO_OLIVIER[a.body_a], kb = SWE_NAME_TO_OLIVIER[a.body_b];
+        if (!ka || !kb) return;
+        const da = (olivier[ka]||0) * 180 / Math.PI;
+        const db = (olivier[kb]||0) * 180 / Math.PI;
+        const [xa, ya] = polar(150, da);
+        const [xb, yb] = polar(150, db);
+        const stroke = ASPECT_COLOR[a.aspect] || '#666';
+        const opacity = Math.max(0.25, 1 - a.orb_distance / 6);
+        parts.push(`<line x1="${xa}" y1="${ya}" x2="${xb}" y2="${yb}" stroke="${stroke}" stroke-width="0.8" stroke-opacity="${opacity}"/>`);
+      });
       // planet glyphs — separate the modern/asteroid points to an inner ring
       // so they don't visually crowd the seven traditional planets.
       const traditional = new Set(['sun','moon','mercury','venus','mars','jupiter','saturn']);
       const outer = new Set(['uranus','neptune','pluto']);
+      const rxMap = (olivier.retrograde) || {};
       Object.entries(GLYPHS).forEach(([name, glyph]) => {
         const lon = olivier[name];
         if (lon === undefined) return;
@@ -135,6 +160,9 @@
         const fill = PLANET_COLORS[name] || "#9b59b6";
         const [x, y] = polar(radius, deg);
         parts.push(`<text x="${x}" y="${y+7}" font-size="20" fill="${fill}" text-anchor="middle">${glyph}</text>`);
+        if (rxMap[name]) {
+          parts.push(`<text x="${x+11}" y="${y+11}" font-size="10" fill="${fill}">℞</text>`);
+        }
         const [lx, ly] = polar(245, deg);
         parts.push(`<line x1="${lx}" y1="${ly}" x2="${lx*0.92}" y2="${ly*0.92}" stroke="${fill}" stroke-width="0.8"/>`);
       });

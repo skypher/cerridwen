@@ -16,8 +16,7 @@ fn mcp_bin() -> std::path::PathBuf {
     let exe = std::env::var("CARGO_BIN_EXE_cerridwen-mcp")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
-            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("target/debug/cerridwen-mcp")
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/debug/cerridwen-mcp")
         });
     if !exe.exists() {
         panic!(
@@ -53,9 +52,13 @@ fn talk(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
     for line in reader.lines() {
         let line = line.expect("read line");
-        if line.is_empty() { continue; }
-        out.push(serde_json::from_str::<serde_json::Value>(&line)
-            .unwrap_or_else(|e| panic!("bad MCP output: {} ({})", line, e)));
+        if line.is_empty() {
+            continue;
+        }
+        out.push(
+            serde_json::from_str::<serde_json::Value>(&line)
+                .unwrap_or_else(|e| panic!("bad MCP output: {} ({})", line, e)),
+        );
     }
     let _ = child.wait();
     out
@@ -63,14 +66,16 @@ fn talk(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
 
 #[test]
 fn initialize_returns_protocol_info() {
-    let resps = talk(&[
-        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}),
-    ]);
+    let resps =
+        talk(&[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})]);
     assert_eq!(resps.len(), 1);
     let r = &resps[0];
     assert_eq!(r["id"], 1);
     assert_eq!(r["result"]["serverInfo"]["name"], "cerridwen");
-    assert!(r["result"]["protocolVersion"].as_str().unwrap().starts_with("2024-"));
+    assert!(r["result"]["protocolVersion"]
+        .as_str()
+        .unwrap()
+        .starts_with("2024-"));
 }
 
 #[test]
@@ -80,16 +85,30 @@ fn tools_list_contains_all_tools() {
         serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/list"}),
     ]);
     let list = &resps[1]["result"]["tools"];
-    let names: Vec<&str> = list.as_array().unwrap()
+    let names: Vec<&str> = list
+        .as_array()
+        .unwrap()
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     for need in [
-        "get_sun", "get_moon", "get_body", "get_houses",
-        "get_eclipses", "get_transits", "get_return",
-        "get_aspects", "get_star", "get_events",
+        "get_sun",
+        "get_moon",
+        "get_body",
+        "get_houses",
+        "get_eclipses",
+        "get_transits",
+        "get_return",
+        "get_aspects",
+        "get_star",
+        "get_events",
     ] {
-        assert!(names.contains(&need), "missing tool: {} (have: {:?})", need, names);
+        assert!(
+            names.contains(&need),
+            "missing tool: {} (have: {:?})",
+            need,
+            names
+        );
     }
 }
 
@@ -106,7 +125,11 @@ fn tools_call_get_sun_returns_position() {
     assert_eq!(r["isError"], false);
     let s = &r["structuredContent"];
     let lon = s["position"]["absolute_degrees"].as_f64().unwrap();
-    assert!((45.0..47.0).contains(&lon), "Sun longitude {} not in expected range", lon);
+    assert!(
+        (45.0..47.0).contains(&lon),
+        "Sun longitude {} not in expected range",
+        lon
+    );
     assert_eq!(s["position"]["sign"], "Taurus");
 }
 
@@ -136,7 +159,11 @@ fn tools_call_get_star_sirius() {
     let s = &resps[1]["result"]["structuredContent"];
     assert!(s["name"].as_str().unwrap().contains("Sirius"));
     let lon = s["longitude"].as_f64().unwrap();
-    assert!(lon > 100.0 && lon < 110.0, "Sirius lon {} not near Cancer", lon);
+    assert!(
+        lon > 100.0 && lon < 110.0,
+        "Sirius lon {} not near Cancer",
+        lon
+    );
 }
 
 #[test]
@@ -150,8 +177,11 @@ fn tools_call_get_houses_requires_observer() {
             "arguments":{}
         }}),
     ]);
-    assert!(resps[1].get("error").is_some(),
-            "expected error response, got: {}", resps[1]);
+    assert!(
+        resps[1].get("error").is_some(),
+        "expected error response, got: {}",
+        resps[1]
+    );
 }
 
 #[test]
@@ -168,9 +198,8 @@ fn tools_call_unknown_tool_errors() {
 
 #[test]
 fn unknown_method_returns_method_not_found() {
-    let resps = talk(&[
-        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"this/method/does/not/exist"}),
-    ]);
+    let resps =
+        talk(&[serde_json::json!({"jsonrpc":"2.0","id":1,"method":"this/method/does/not/exist"})]);
     assert_eq!(resps[0]["error"]["code"], -32601);
 }
 

@@ -20,13 +20,14 @@ pub mod utils;
 
 pub use crate::defs::{Aspect, ASPECTS, SIGNS, SIGN_RELATED_ASPECTS, TRADITIONAL_MAJOR_ASPECTS};
 pub use crate::planets::{
-    angle_points, apply_ayanamsha, compute_aspects_at, compute_aspects_extended,
-    compute_ayanamsha, compute_houses, compute_transits, default_transit_bodies,
-    eclipses_within_period, fixed_star, next_eclipse, next_return, parse_ayanamsha,
-    parse_house_system, valid_house_systems, ActiveTransit, Ascendant, Body, Ceres, Chiron,
-    Eclipse, EclipseKind, EclipseSearch, FixedStar, FixedZodiacPoint, Houses, InstantAspect,
-    Jupiter, Juno, Lilith, Mars, MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet,
-    PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,
+    angle_points, apply_ayanamsha, compute_aspects_at, compute_aspects_extended, compute_ayanamsha,
+    compute_houses, compute_transits, compute_transits_extended, default_transit_bodies,
+    eclipses_within_period, fixed_star,
+    next_eclipse, next_return, parse_ayanamsha, parse_house_system, valid_house_systems,
+    ActiveTransit, Ascendant, Body, Ceres, Chiron, Eclipse, EclipseKind, EclipseSearch, FixedStar,
+    FixedZodiacPoint, Houses, InstantAspect, Juno, Jupiter, Lilith, Mars, MeanNode, Mercury, Moon,
+    MoonPhaseData, Neptune, Pallas, Planet, PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun,
+    TrueNode, Uranus, Venus, Vesta,
 };
 pub use crate::utils::{
     angle_to_aspect_name, aspect_name_to_angle, days_frac_to_dhms, iso2jd, jd2iso, jd_now,
@@ -137,8 +138,12 @@ pub fn compute_sun_data(jd: Option<f64>, observer: Option<LatLong>) -> SunData {
     let relative_orbital_velocity = sun.0.relative_orbital_velocity();
     let next_event = sun.0.next_event();
     let (next_rise, next_set, last_rise, last_set) = if observer.is_some() {
-        (Some(sun.next_rise()), Some(sun.next_set()),
-         Some(sun.last_rise()), Some(sun.last_set()))
+        (
+            Some(sun.next_rise()),
+            Some(sun.next_set()),
+            Some(sun.last_rise()),
+            Some(sun.last_set()),
+        )
     } else {
         (None, None, None, None)
     };
@@ -182,8 +187,7 @@ pub fn compute_moon_data_with(
     let mean_orbital_period = moon.0.mean_orbital_period();
     let relative_orbital_velocity = moon.0.relative_orbital_velocity();
     let lunation_number = moon.lunation_number(None);
-    let (voc_is_void, voc_until_jd) =
-        moon.is_void_of_course(None, opts.voc_traditional_only);
+    let (voc_is_void, voc_until_jd) = moon.is_void_of_course(None, opts.voc_traditional_only);
     let void_of_course = VoidOfCourseData {
         is_void: voc_is_void,
         until_jd: voc_until_jd,
@@ -197,8 +201,12 @@ pub fn compute_moon_data_with(
     let last_new_moon = moon.last_new_moon(None);
     let last_full_moon = moon.last_full_moon(None);
     let (next_rise, next_set, last_rise, last_set) = if observer.is_some() {
-        (Some(moon.next_rise()), Some(moon.next_set()),
-         Some(moon.last_rise()), Some(moon.last_set()))
+        (
+            Some(moon.next_rise()),
+            Some(moon.next_set()),
+            Some(moon.last_rise()),
+            Some(moon.last_set()),
+        )
     } else {
         (None, None, None, None)
     };
@@ -255,19 +263,30 @@ pub mod events {
 
     impl EventFilter {
         pub fn new() -> Self {
-            Self { types: None, subtypes: None, planets: None, datas: None }
+            Self {
+                types: None,
+                subtypes: None,
+                planets: None,
+                datas: None,
+            }
         }
         fn keep(&self, t: &str, st: &str, p: &str, d: &str) -> bool {
             let pass = |allow: &Option<Vec<String>>, val: &str| {
-                allow.as_ref().map_or(true, |xs| xs.iter().any(|x| x == val))
+                allow
+                    .as_ref()
+                    .is_none_or(|xs| xs.iter().any(|x| x == val))
             };
-            pass(&self.types, t) && pass(&self.subtypes, st)
-                && pass(&self.planets, p) && pass(&self.datas, d)
+            pass(&self.types, t)
+                && pass(&self.subtypes, st)
+                && pass(&self.planets, p)
+                && pass(&self.datas, d)
         }
     }
 
     impl Default for EventFilter {
-        fn default() -> Self { Self::new() }
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     #[derive(Debug, Clone)]

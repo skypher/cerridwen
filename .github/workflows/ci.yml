@@ -53,7 +53,6 @@ jobs:
           components: rustfmt
       - working-directory: rust
         run: cargo fmt --check
-        continue-on-error: true   # tolerated until codebase is fully fmt-clean
 
   clippy:
     runs-on: ubuntu-latest
@@ -66,4 +65,3 @@ jobs:
         env:
           CERRIDWEN_EPHE_PATH: ${{ github.workspace }}/sweph
         run: cargo clippy --features server,mcp,events --all-targets -- -D warnings
-        continue-on-error: true   # tolerated until codebase is fully lint-clean

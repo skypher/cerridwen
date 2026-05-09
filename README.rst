@@ -1,6 +1,16 @@
 Cerridwen
 =========
 
+.. image:: https://github.com/skypher/cerridwen/actions/workflows/ci.yml/badge.svg
+   :target: https://github.com/skypher/cerridwen/actions/workflows/ci.yml
+   :alt: CI status
+
+.. image:: https://img.shields.io/badge/license-MIT%20%2B%20AGPL--3.0-blue.svg
+   :alt: License: MIT + AGPL-3.0
+
+.. image:: https://img.shields.io/badge/rust-stable-orange.svg
+   :alt: Rust stable
+
 Cerridwen provides geocentric planetary data suitable for a broad spectrum
 of astronomical and astrological applications, with a focus on the solar
 system and the bodies/points commonly used in astrology.

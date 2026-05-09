@@ -1,14 +1,14 @@
-use cerridwen::planets::{
-    Body, Jupiter, Mars, Mercury, Moon, Planet, Saturn, Sun, Venus,
-};
+use cerridwen::planets::{Body, Jupiter, Mars, Mercury, Moon, Planet, Saturn, Sun, Venus};
 use cerridwen::utils::jd2iso;
 use cerridwen::ASPECTS;
 use clap::Parser;
 use rusqlite::Connection;
 
 #[derive(Parser, Debug)]
-#[command(name = "cerridwen-event-generator",
-          about = "Generate aspects/ingresses/retrogrades into a sqlite events table")]
+#[command(
+    name = "cerridwen-event-generator",
+    about = "Generate aspects/ingresses/retrogrades into a sqlite events table"
+)]
 struct Args {
     /// Julian-day start of the period to generate.
     #[arg(long)]
@@ -45,7 +45,16 @@ fn main() -> rusqlite::Result<()> {
     let span = args.jd_end - args.jd_start;
     let mut flush_counter: i64 = 0;
 
-    let mut pump = |event_function: &mut dyn FnMut(f64) -> Option<(f64, String, String, String, String)>| -> rusqlite::Result<()> {
+    let mut pump = |event_function: &mut dyn FnMut(
+        f64,
+    ) -> Option<(
+        f64,
+        String,
+        String,
+        String,
+        String,
+    )>|
+     -> rusqlite::Result<()> {
         let mut jd = args.jd_start;
         while jd < args.jd_end {
             let event = event_function(jd);
@@ -61,11 +70,23 @@ fn main() -> rusqlite::Result<()> {
             let pct = (jd - args.jd_start) / span * 100.0;
             println!(
                 "{:.2}% {} {} {} {} {} {}",
-                pct, event_jd, jd2iso(event_jd), event_type, event_subtype, event_planet, event_data
+                pct,
+                event_jd,
+                jd2iso(event_jd),
+                event_type,
+                event_subtype,
+                event_planet,
+                event_data
             );
             conn.execute(
                 "INSERT INTO events VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![event_jd, event_type, event_subtype, event_planet, event_data],
+                rusqlite::params![
+                    event_jd,
+                    event_type,
+                    event_subtype,
+                    event_planet,
+                    event_data
+                ],
             )?;
             jd = event_jd + 1.0;
             flush_counter += 1;
@@ -81,24 +102,35 @@ fn main() -> rusqlite::Result<()> {
         for (_pn2, p2) in &planets {
             if p2.max_speed() < p1.max_speed() {
                 for aspect in ASPECTS.iter() {
-                    if !p1.aspect_possible(p2, aspect.angle) { continue; }
+                    if !p1.aspect_possible(p2, aspect.angle) {
+                        continue;
+                    }
                     let p1_owned = p1.clone();
                     let p2_owned = p2.clone();
                     let aspect_angle = aspect.angle;
                     let aspect_name = aspect.name.to_string();
                     let aspect_mode = aspect.mode.unwrap_or("").to_string();
-                    let mut event_fn = move |jd: f64| -> Option<(f64, String, String, String, String)> {
-                        let res = p1_owned.next_angle_to_planet(
-                            &p2_owned, aspect_angle, Some(jd), None, None, None, None,
-                        );
-                        res.map(|(event_jd, _, _)| (
-                            event_jd,
-                            aspect_name.clone(),
-                            aspect_mode.clone(),
-                            p1_owned.name(),
-                            p2_owned.name(),
-                        ))
-                    };
+                    let mut event_fn =
+                        move |jd: f64| -> Option<(f64, String, String, String, String)> {
+                            let res = p1_owned.next_angle_to_planet(
+                                &p2_owned,
+                                aspect_angle,
+                                Some(jd),
+                                None,
+                                None,
+                                None,
+                                None,
+                            );
+                            res.map(|(event_jd, _, _)| {
+                                (
+                                    event_jd,
+                                    aspect_name.clone(),
+                                    aspect_mode.clone(),
+                                    p1_owned.name(),
+                                    p2_owned.name(),
+                                )
+                            })
+                        };
                     pump(&mut event_fn)?;
                 }
             }
@@ -123,7 +155,9 @@ fn main() -> rusqlite::Result<()> {
 
     // ---- retrogrades -----
     for (name, p) in &planets {
-        if *name == "Moon" || *name == "Sun" { continue; }
+        if *name == "Moon" || *name == "Sun" {
+            continue;
+        }
         let p_owned = p.clone();
         let mut event_fn = move |jd: f64| -> Option<(f64, String, String, String, String)> {
             let (event_jd, kind) = p_owned.next_rx_event(Some(jd), None)?;
