@@ -1108,7 +1108,7 @@ impl Moon {
             .next_angle_to_planet(&sun.0, 0.0, Some(jd), None, None, None, None)
             .expect("next_new_moon");
         let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
-        PlanetEvent::new(format!("New moon in {}", sign), event_jd)
+        PlanetEvent::new(format!("New moon in {sign}"), event_jd)
     }
 
     pub fn last_new_moon(&self, jd: Option<f64>) -> PlanetEvent {
@@ -1119,7 +1119,7 @@ impl Moon {
             .next_angle_to_planet(&sun.0, 0.0, Some(jd), Some(-40.0), None, None, None)
             .expect("last_new_moon");
         let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
-        PlanetEvent::new(format!("New moon in {}", sign), event_jd)
+        PlanetEvent::new(format!("New moon in {sign}"), event_jd)
     }
 
     pub fn next_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
@@ -1130,7 +1130,7 @@ impl Moon {
             .next_angle_to_planet(&sun.0, 180.0, Some(jd), None, None, None, None)
             .expect("next_full_moon");
         let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
-        PlanetEvent::new(format!("Full moon in {}", sign), event_jd)
+        PlanetEvent::new(format!("Full moon in {sign}"), event_jd)
     }
 
     pub fn last_full_moon(&self, jd: Option<f64>) -> PlanetEvent {
@@ -1141,7 +1141,7 @@ impl Moon {
             .next_angle_to_planet(&sun.0, 180.0, Some(jd), Some(-40.0), None, None, None)
             .expect("last_full_moon");
         let sign = PlanetLongitude::new(self.0.longitude_at(event_jd)).sign();
-        PlanetEvent::new(format!("Full moon in {}", sign), event_jd)
+        PlanetEvent::new(format!("Full moon in {sign}"), event_jd)
     }
 
     pub fn next_new_or_full_moon(&self, jd: Option<f64>) -> PlanetEvent {

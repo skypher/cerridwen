@@ -27,7 +27,7 @@ fn main() {
     let mut stdout_lock = stdout.lock();
     let mut line = String::new();
 
-    eprintln!("cerridwen-mcp: ready (protocol {})", PROTOCOL_VERSION);
+    eprintln!("cerridwen-mcp: ready (protocol {PROTOCOL_VERSION})");
 
     loop {
         line.clear();
@@ -35,7 +35,7 @@ fn main() {
             Ok(0) => break, // EOF
             Ok(_) => {}
             Err(e) => {
-                eprintln!("cerridwen-mcp: stdin error: {}", e);
+                eprintln!("cerridwen-mcp: stdin error: {e}");
                 break;
             }
         }
@@ -46,14 +46,14 @@ fn main() {
         let req: Value = match serde_json::from_str(trimmed) {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("cerridwen-mcp: invalid JSON: {}", e);
+                eprintln!("cerridwen-mcp: invalid JSON: {e}");
                 continue;
             }
         };
         if let Some(resp) = handle(&req) {
             let s = resp.to_string();
-            if let Err(e) = writeln!(stdout_lock, "{}", s) {
-                eprintln!("cerridwen-mcp: stdout write failed: {}", e);
+            if let Err(e) = writeln!(stdout_lock, "{s}") {
+                eprintln!("cerridwen-mcp: stdout write failed: {e}");
                 break;
             }
             let _ = stdout_lock.flush();
@@ -75,7 +75,7 @@ fn handle(req: &Value) -> Option<Value> {
         "tools/list" => Ok(tools_list()),
         "tools/call" => tools_call(&params),
         "ping" => Ok(json!({})),
-        other => Err((-32601, format!("method not found: {}", other))),
+        other => Err((-32601, format!("method not found: {other}"))),
     };
 
     if is_notification {
@@ -250,7 +250,7 @@ fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
         "get_events" => tool_get_events(&args)?,
         "get_star" => tool_get_star(&args)?,
         "get_aspects" => tool_get_aspects(&args)?,
-        other => return Err((-32602, format!("unknown tool: {}", other))),
+        other => return Err((-32602, format!("unknown tool: {other}"))),
     };
     // MCP wraps tool output in a `content` array of blocks.
     Ok(json!({
@@ -305,12 +305,12 @@ fn parse_zodiac(args: &Value, jd: f64) -> Result<(f64, &'static str), (i64, Stri
         Some("sidereal") => {
             let name = arg_str(args, "ayanamsha").unwrap_or("lahiri");
             let (mode, label) = parse_ayanamsha(name)
-                .ok_or_else(|| (-32602, format!("unknown ayanamsha: {}", name)))?;
+                .ok_or_else(|| (-32602, format!("unknown ayanamsha: {name}")))?;
             Ok((compute_ayanamsha(jd, mode), label))
         }
         Some(other) => Err((
             -32602,
-            format!("zodiac must be tropical or sidereal: {}", other),
+            format!("zodiac must be tropical or sidereal: {other}"),
         )),
     }
 }
@@ -348,12 +348,12 @@ fn tool_get_moon(args: &Value) -> Result<Value, (i64, String)> {
 
 fn tool_get_body(args: &Value) -> Result<Value, (i64, String)> {
     let name_in = arg_str(args, "name").ok_or((-32602, "missing 'name'".to_string()))?;
-    let canonical = canonical_body_name(name_in)
-        .ok_or_else(|| (-32602, format!("unknown body: {}", name_in)))?;
+    let canonical =
+        canonical_body_name(name_in).ok_or_else(|| (-32602, format!("unknown body: {name_in}")))?;
     let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
     let observer = parse_observer(args)?;
     let planet =
-        body_for(canonical, jd).ok_or_else(|| (-32602, format!("unknown body: {}", name_in)))?;
+        body_for(canonical, jd).ok_or_else(|| (-32602, format!("unknown body: {name_in}")))?;
     let (ayan, ayan_name) = parse_zodiac(args, jd)?;
     let trop_lon = planet.longitude_at(jd);
     let lon = if ayan != 0.0 {
@@ -409,7 +409,7 @@ fn tool_get_houses(args: &Value) -> Result<Value, (i64, String)> {
     let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
     let system = match arg_str(args, "house_system") {
         Some(s) => {
-            parse_house_system(s).ok_or_else(|| (-32602, format!("unknown house_system: {}", s)))?
+            parse_house_system(s).ok_or_else(|| (-32602, format!("unknown house_system: {s}")))?
         }
         None => 'P',
     };
@@ -438,7 +438,7 @@ fn tool_get_eclipses(args: &Value) -> Result<Value, (i64, String)> {
         None | Some("both") | Some("any") => (true, true),
         Some("solar") => (true, false),
         Some("lunar") => (false, true),
-        Some(other) => return Err((-32602, format!("type must be solar/lunar/both: {}", other))),
+        Some(other) => return Err((-32602, format!("type must be solar/lunar/both: {other}"))),
     };
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
     let eclipses = eclipses_within_period(jd_start, jd_end, solar, lunar, limit);
@@ -471,15 +471,15 @@ fn tool_get_transits(args: &Value) -> Result<Value, (i64, String)> {
 fn tool_get_return(args: &Value) -> Result<Value, (i64, String)> {
     let body_name = arg_str(args, "body").ok_or((-32602, "body is required".to_string()))?;
     let canonical = canonical_body_name(body_name)
-        .ok_or_else(|| (-32602, format!("unknown body: {}", body_name)))?;
+        .ok_or_else(|| (-32602, format!("unknown body: {body_name}")))?;
     let body_id = body_for(canonical, 0.0)
-        .ok_or_else(|| (-32602, format!("unknown body: {}", body_name)))?
+        .ok_or_else(|| (-32602, format!("unknown body: {body_name}")))?
         .id;
     let natal_jd = parse_date_arg(args, "natal_date")?
         .ok_or((-32602, "natal_date is required".to_string()))?;
     let start_jd = parse_date_arg(args, "start_date")?.unwrap_or_else(jd_now);
     let return_jd = next_return(body_id, natal_jd, start_jd)
-        .ok_or_else(|| (-32603, format!("no return found for {}", canonical)))?;
+        .ok_or_else(|| (-32603, format!("no return found for {canonical}")))?;
     Ok(json!({
         "body": canonical,
         "natal_jd": natal_jd,
@@ -569,7 +569,7 @@ fn tool_get_events(args: &Value) -> Result<Value, (i64, String)> {
         datas: split("datas"),
     };
     let events = get_events(&dbfile, jd_start, jd_end, limit, &filter)
-        .map_err(|e| (-32603, format!("event query failed: {}", e)))?;
+        .map_err(|e| (-32603, format!("event query failed: {e}")))?;
     let arr: Vec<Value> = events
         .iter()
         .map(|e| {

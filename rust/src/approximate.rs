@@ -32,8 +32,7 @@ where
     if num_points > MAX_DATA_POINTS {
         if DEBUG_EVENT_APPROXIMATION {
             eprintln!(
-                "data point maximum ({}) exceeded (have {}), aborting pass.",
-                MAX_DATA_POINTS, num_points
+                "data point maximum ({MAX_DATA_POINTS}) exceeded (have {num_points}), aborting pass."
             );
         }
         return None;

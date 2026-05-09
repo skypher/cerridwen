@@ -15,6 +15,17 @@ CI runs the same build, plus `cargo fmt --check` and
 `cargo clippy --all-targets -- -D warnings`. Both must be clean before
 merging.
 
+## Pre-commit hook
+
+A drop-in hook lives in `deploy/pre-commit` — it runs `cargo fmt --check`
+and `cargo clippy --no-deps -D warnings` on every commit that touches
+Rust code. Install it once and forget about it:
+
+```bash
+ln -sf $(pwd)/deploy/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
 ## Style
 
 * Run `cargo fmt` before pushing — there's no negotiation; CI will

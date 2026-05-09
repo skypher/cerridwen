@@ -51,10 +51,7 @@ pub fn jd2iso(jd: f64) -> String {
         s = ts2 % 60;
     }
 
-    format!(
-        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
-        year, month, day, h, m, s
-    )
+    format!("{year:04}-{month:02}-{day:02} {h:02}:{m:02}:{s:02}")
 }
 
 /// Convert an ISO timestamp into a Julian day.
@@ -75,7 +72,7 @@ pub fn iso2jd(iso: &str) -> Result<f64, String> {
         let ndt = NaiveDateTime::new(d, NaiveTime::from_hms_opt(0, 0, 0).unwrap());
         return Ok(naive_to_jd(ndt));
     }
-    Err(format!("could not parse ISO date: {}", iso))
+    Err(format!("could not parse ISO date: {iso}"))
 }
 
 fn naive_to_jd(ndt: NaiveDateTime) -> f64 {
@@ -110,7 +107,7 @@ pub fn parse_jd_or_iso_date_in_tz(date: &str, tz: Option<&str>) -> Result<f64, S
         Some(tzname) => {
             let zone: chrono_tz::Tz = tzname
                 .parse()
-                .map_err(|_| format!("unknown timezone: {}", tzname))?;
+                .map_err(|_| format!("unknown timezone: {tzname}"))?;
             iso2jd_in_tz(date, zone)
         }
         None => iso2jd(date),
@@ -155,7 +152,7 @@ fn iso2jd_in_tz(iso: &str, tz: chrono_tz::Tz) -> Result<f64, String> {
         let secs = utc.timestamp() - 946_728_000;
         return Ok(2451545.0 + secs as f64 / 86400.0);
     }
-    Err(format!("could not parse ISO date: {}", iso))
+    Err(format!("could not parse ISO date: {iso}"))
 }
 
 /// Distance between two angles a and b in modulo-360 sense (always 0..=180).
@@ -184,13 +181,13 @@ pub fn render_delta_days(delta_days: f64) -> String {
     let (days, hours, minutes, _) = days_frac_to_dhms(delta_days);
     let mut parts = Vec::new();
     if days > 0 {
-        parts.push(format!("{} days", days));
+        parts.push(format!("{days} days"));
     }
     if hours > 0 {
-        parts.push(format!("{} hours", hours));
+        parts.push(format!("{hours} hours"));
     }
     if days == 0 && minutes > 0 {
-        parts.push(format!("{} minutes", minutes));
+        parts.push(format!("{minutes} minutes"));
     }
     if days == 0 && hours == 0 && minutes == 0 {
         return "less than a minute".to_string();

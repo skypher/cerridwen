@@ -43,7 +43,7 @@ fn talk(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
 
     let stdin = child.stdin.as_mut().expect("stdin");
     for req in requests {
-        writeln!(stdin, "{}", req).expect("write request");
+        writeln!(stdin, "{req}").expect("write request");
     }
     drop(child.stdin.take());
 
@@ -57,7 +57,7 @@ fn talk(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
         }
         out.push(
             serde_json::from_str::<serde_json::Value>(&line)
-                .unwrap_or_else(|e| panic!("bad MCP output: {} ({})", line, e)),
+                .unwrap_or_else(|e| panic!("bad MCP output: {line} ({e})")),
         );
     }
     let _ = child.wait();
@@ -105,9 +105,7 @@ fn tools_list_contains_all_tools() {
     ] {
         assert!(
             names.contains(&need),
-            "missing tool: {} (have: {:?})",
-            need,
-            names
+            "missing tool: {need} (have: {names:?})"
         );
     }
 }
@@ -127,8 +125,7 @@ fn tools_call_get_sun_returns_position() {
     let lon = s["position"]["absolute_degrees"].as_f64().unwrap();
     assert!(
         (45.0..47.0).contains(&lon),
-        "Sun longitude {} not in expected range",
-        lon
+        "Sun longitude {lon} not in expected range"
     );
     assert_eq!(s["position"]["sign"], "Taurus");
 }
@@ -161,8 +158,7 @@ fn tools_call_get_star_sirius() {
     let lon = s["longitude"].as_f64().unwrap();
     assert!(
         lon > 100.0 && lon < 110.0,
-        "Sirius lon {} not near Cancer",
-        lon
+        "Sirius lon {lon} not near Cancer"
     );
 }
 

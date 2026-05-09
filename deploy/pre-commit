@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Pre-commit hook: run cargo fmt --check and clippy on the staged Rust
+# code. Reject the commit if either fails.
+#
+# Install:
+#   ln -sf $(pwd)/deploy/pre-commit .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+#
+# Bypass (rare):
+#   git commit --no-verify
+
+set -euo pipefail
+
+# Only run if any Rust files are staged.
+if ! git diff --cached --name-only | grep -qE '\.rs$|^rust/Cargo\.(toml|lock)$'; then
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)/rust"
+
+echo "pre-commit: cargo fmt --check..."
+cargo fmt --check
+
+echo "pre-commit: cargo clippy --no-deps -D warnings..."
+# --no-deps skips third-party deps; --all-targets covers tests + binaries.
+CERRIDWEN_EPHE_PATH="${CERRIDWEN_EPHE_PATH:-$(pwd)/../sweph}" \
+  cargo clippy --no-deps --features server,mcp,events --all-targets -- -D warnings
+
+echo "pre-commit: ok"

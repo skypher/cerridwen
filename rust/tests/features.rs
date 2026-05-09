@@ -43,7 +43,7 @@ fn ceres_returns_have_period() {
     let natal = iso2jd("2024-01-01T00:00:00").unwrap();
     let return_jd = next_return(SE_CERES, natal, natal + 1.0).expect("Ceres return");
     let years = (return_jd - natal) / 365.25;
-    assert!(years > 4.0 && years < 5.5, "Ceres period {} yr", years);
+    assert!(years > 4.0 && years < 5.5, "Ceres period {years} yr");
 }
 
 // ----------------------- houses --------------------------------------------
@@ -78,7 +78,7 @@ fn lahiri_ayanamsha_in_expected_range_for_today() {
     // Lahiri has been ~24° for the past decade.
     let (mode, _) = parse_ayanamsha("lahiri").unwrap();
     let v = compute_ayanamsha(2461167.0, mode);
-    assert!(v > 23.5 && v < 25.0, "lahiri = {}", v);
+    assert!(v > 23.5 && v < 25.0, "lahiri = {v}");
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn next_solar_eclipse_after_2026_05_01() {
     let start = iso2jd("2026-05-01T00:00:00").unwrap();
     let e = next_eclipse(start, EclipseSearch::Solar, false).expect("an eclipse");
     let iso = jd2iso(e.max_jd);
-    assert!(iso.starts_with("2026-08-12"), "got {}", iso);
+    assert!(iso.starts_with("2026-08-12"), "got {iso}");
     assert_eq!(e.kind, EclipseKind::SolarTotal);
 }
 
@@ -161,7 +161,7 @@ fn solar_return_within_year() {
     let yrs = days / 365.25;
     let frac = yrs - yrs.floor();
     // Should land within a couple of days of an integer year multiple.
-    assert!(!(0.01..=0.99).contains(&frac), "delta yrs={}", yrs);
+    assert!(!(0.01..=0.99).contains(&frac), "delta yrs={yrs}");
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn lunar_return_within_30_days() {
     let natal = iso2jd("2024-01-01T00:00:00").unwrap();
     let r = next_return(SE_MOON, natal, natal + 1.0).expect("Moon return");
     let days = r - natal;
-    assert!(days > 25.0 && days < 31.0, "Moon return {} d", days);
+    assert!(days > 25.0 && days < 31.0, "Moon return {days} d");
 }
 
 // ----------------------- fixed stars ---------------------------------------

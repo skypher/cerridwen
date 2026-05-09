@@ -66,7 +66,7 @@ impl Server {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if TcpStream::connect_timeout(
-                &format!("127.0.0.1:{}", port).parse().unwrap(),
+                &format!("127.0.0.1:{port}").parse().unwrap(),
                 Duration::from_millis(250),
             )
             .is_ok()
@@ -74,7 +74,7 @@ impl Server {
                 break;
             }
             if Instant::now() > deadline {
-                panic!("server on port {} never became reachable", port);
+                panic!("server on port {port} never became reachable");
             }
             std::thread::sleep(Duration::from_millis(50));
         }
@@ -93,7 +93,7 @@ impl Server {
             path, self.port
         );
         for (k, v) in extra_headers {
-            req.push_str(&format!("{}: {}\r\n", k, v));
+            req.push_str(&format!("{k}: {v}\r\n"));
         }
         req.push_str("\r\n");
         s.write_all(req.as_bytes()).expect("write");
@@ -225,15 +225,15 @@ fn rate_limiter_returns_429_after_threshold() {
     let mut codes = Vec::new();
     for i in 0..8 {
         let r = s.get_with_headers(
-            &format!("/v1/sun?nonce={}", i),
+            &format!("/v1/sun?nonce={i}"),
             &[("X-Forwarded-For", "10.0.0.99")],
         );
         codes.push(r.status);
     }
     let ok = codes.iter().filter(|&&c| c == 200).count();
     let limited = codes.iter().filter(|&&c| c == 429).count();
-    assert_eq!(ok, 5, "expected 5 OK, got codes: {:?}", codes);
-    assert_eq!(limited, 3, "expected 3 limited, got codes: {:?}", codes);
+    assert_eq!(ok, 5, "expected 5 OK, got codes: {codes:?}");
+    assert_eq!(limited, 3, "expected 3 limited, got codes: {codes:?}");
 }
 
 #[test]

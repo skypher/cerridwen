@@ -21,17 +21,10 @@ fn assert_iso_within(actual: &str, expected: &str, max_seconds: f64) {
     let diff_seconds = (a - e).abs() * 86400.0;
     assert!(
         diff_seconds <= max_seconds,
-        "iso timestamps differ by {:.3}s (> {}s): actual={}, expected={}",
-        diff_seconds,
-        max_seconds,
-        actual,
-        expected,
+        "iso timestamps differ by {diff_seconds:.3}s (> {max_seconds}s): actual={actual}, expected={expected}",
     );
     if std::env::var("CERRIDWEN_REPORT_DRIFT").is_ok() {
-        eprintln!(
-            "drift: {:.3}s — actual={}, expected={}",
-            diff_seconds, actual, expected
-        );
+        eprintln!("drift: {diff_seconds:.3}s — actual={actual}, expected={expected}");
     }
 }
 
@@ -226,7 +219,7 @@ fn relative_orbital_velocity_mercury_faster_than_earth() {
     // ratio ≈ 1.59. The cube-root formula gives the same number.
     let m = Mercury::new();
     let v = m.0.relative_orbital_velocity();
-    assert!((1.59..1.61).contains(&v), "got {}", v);
+    assert!((1.59..1.61).contains(&v), "got {v}");
 }
 
 #[test]
@@ -234,7 +227,7 @@ fn relative_orbital_velocity_mars_slower_than_earth() {
     use cerridwen::planets::Mars;
     let m = Mars::new();
     let v = m.0.relative_orbital_velocity();
-    assert!((0.80..0.82).contains(&v), "got {}", v);
+    assert!((0.80..0.82).contains(&v), "got {v}");
 }
 
 #[test]
@@ -243,7 +236,7 @@ fn lunation_number_today_is_in_expected_range() {
     // Today (May 2026) we expect somewhere in the 1270s.
     let m = Moon::new();
     let n = m.lunation_number(None);
-    assert!((1270..=1290).contains(&n), "got {}", n);
+    assert!((1270..=1290).contains(&n), "got {n}");
 }
 
 #[test]
@@ -299,10 +292,7 @@ fn void_of_course_basic() {
     let (_voc, until) = m.is_void_of_course(None, false);
     assert!(
         until > jd && until <= nsc + 1e-6,
-        "until={} jd={} nsc={}",
-        until,
-        jd,
-        nsc
+        "until={until} jd={jd} nsc={nsc}"
     );
 }
 

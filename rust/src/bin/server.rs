@@ -319,14 +319,11 @@ fn parse_zodiac(q: &HashMap<String, String>, jd: f64) -> Result<(f64, &'static s
         Some("sidereal") => {
             let name = q.get("ayanamsha").map(|s| s.as_str()).unwrap_or("lahiri");
             let (mode, label) =
-                parse_ayanamsha(name).ok_or_else(|| format!("unknown ayanamsha: {}", name))?;
+                parse_ayanamsha(name).ok_or_else(|| format!("unknown ayanamsha: {name}"))?;
             let deg = compute_ayanamsha(jd, mode);
             Ok((deg, label))
         }
-        Some(other) => Err(format!(
-            "zodiac must be tropical or sidereal, got: {}",
-            other
-        )),
+        Some(other) => Err(format!("zodiac must be tropical or sidereal, got: {other}")),
     }
 }
 
@@ -453,7 +450,7 @@ async fn olivier_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         let system = match q.get("house_system") {
             Some(s) => match parse_house_system(s) {
                 Some(c) => c,
-                None => return bad_request(&format!("unknown house_system: {}", s)),
+                None => return bad_request(&format!("unknown house_system: {s}")),
             },
             None => 'P',
         };
@@ -634,7 +631,7 @@ async fn stream_body_endpoint(
 ) -> Response {
     let canonical = match canonical_body_name(&name) {
         Some(c) => c.to_string(),
-        None => return not_found(&format!("unknown body: {}", name)),
+        None => return not_found(&format!("unknown body: {name}")),
     };
     let interval = parse_interval_seconds(q.get("interval"));
     let zod = match parse_stream_zodiac(&q) {
@@ -666,9 +663,9 @@ fn parse_stream_zodiac(q: &HashMap<String, String>) -> Result<Option<(i32, &'sta
             let name = q.get("ayanamsha").map(|s| s.as_str()).unwrap_or("lahiri");
             parse_ayanamsha(name)
                 .map(Some)
-                .ok_or_else(|| format!("unknown ayanamsha: {}", name))
+                .ok_or_else(|| format!("unknown ayanamsha: {name}"))
         }
-        Some(other) => Err(format!("zodiac must be tropical or sidereal: {}", other)),
+        Some(other) => Err(format!("zodiac must be tropical or sidereal: {other}")),
     }
 }
 
@@ -934,14 +931,12 @@ fn histogram_lines() -> String {
     for (i, &upper) in LATENCY_BUCKETS_S.iter().enumerate() {
         let n = METRICS.latency_buckets_2xx[i].load(Ordering::Relaxed);
         out.push_str(&format!(
-            "cerridwen_request_duration_seconds_bucket{{le=\"{}\"}} {}\n",
-            upper, n
+            "cerridwen_request_duration_seconds_bucket{{le=\"{upper}\"}} {n}\n"
         ));
     }
     let inf = METRICS.latency_buckets_2xx[8].load(Ordering::Relaxed);
     out.push_str(&format!(
-        "cerridwen_request_duration_seconds_bucket{{le=\"+Inf\"}} {}\n",
-        inf
+        "cerridwen_request_duration_seconds_bucket{{le=\"+Inf\"}} {inf}\n"
     ));
     out
 }
@@ -1454,7 +1449,7 @@ async fn aspects_endpoint(Query(q): Query<HashMap<String, String>>) -> Response 
         let system = match q.get("house_system") {
             Some(s) => match parse_house_system(s) {
                 Some(c) => c,
-                None => return bad_request(&format!("unknown house_system: {}", s)),
+                None => return bad_request(&format!("unknown house_system: {s}")),
             },
             None => 'P',
         };
@@ -1499,10 +1494,10 @@ async fn star_endpoint(
     let star = match fixed_star(&name, jd) {
         Ok(s) => s,
         Err(e) if e.contains("not found") || e.contains("not contained") => {
-            return not_found(&format!("unknown star: {} ({})", name, e));
+            return not_found(&format!("unknown star: {name} ({e})"));
         }
         Err(e) => {
-            return bad_request(&format!("fixstar lookup failed: {}", e));
+            return bad_request(&format!("fixstar lookup failed: {e}"));
         }
     };
 
@@ -1540,11 +1535,11 @@ async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     };
     let canonical = match canonical_body_name(body_name) {
         Some(c) => c,
-        None => return not_found(&format!("unknown body: {}", body_name)),
+        None => return not_found(&format!("unknown body: {body_name}")),
     };
     let body_planet = match body_for(canonical, 0.0) {
         Some(p) => p,
-        None => return not_found(&format!("unknown body: {}", body_name)),
+        None => return not_found(&format!("unknown body: {body_name}")),
     };
     let body_id = body_planet.id;
 
@@ -1567,8 +1562,7 @@ async fn return_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
         Some(j) => j,
         None => {
             return bad_request(&format!(
-                "no return found for {} within typical period",
-                canonical
+                "no return found for {canonical} within typical period"
             ))
         }
     };
@@ -1636,7 +1630,7 @@ async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
 
     let events = match get_events(&dbfile, jd_start, jd_end, limit, &filter) {
         Ok(v) => v,
-        Err(e) => return bad_request(&format!("event query failed: {}", e)),
+        Err(e) => return bad_request(&format!("event query failed: {e}")),
     };
 
     let mut ics = String::new();
@@ -1655,10 +1649,10 @@ async fn events_ics_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
             ev.r#type, ev.planet, ev.data, ev.jd as i64
         );
         ics.push_str("BEGIN:VEVENT\r\n");
-        ics.push_str(&format!("UID:{}\r\n", uid));
-        ics.push_str(&format!("DTSTAMP:{}\r\n", utc));
-        ics.push_str(&format!("DTSTART:{}\r\n", utc));
-        ics.push_str(&format!("DTEND:{}\r\n", utc_end));
+        ics.push_str(&format!("UID:{uid}\r\n"));
+        ics.push_str(&format!("DTSTAMP:{utc}\r\n"));
+        ics.push_str(&format!("DTSTART:{utc}\r\n"));
+        ics.push_str(&format!("DTEND:{utc_end}\r\n"));
         ics.push_str(&format!("SUMMARY:{}\r\n", ical_escape(&title)));
         ics.push_str(&format!(
             "DESCRIPTION:JD {:.6}\\n{} {} {} {}\r\n",
@@ -1708,16 +1702,16 @@ fn ical_escape(s: &str) -> String {
 
 fn format_event_summary(t: &str, st: &str, p: &str, d: &str) -> String {
     match t {
-        "ingress" => format!("{} enters {}", p, d),
-        "rx" => format!("{} stations retrograde in {}", p, d),
-        "direct" => format!("{} stations direct in {}", p, d),
+        "ingress" => format!("{p} enters {d}"),
+        "rx" => format!("{p} stations retrograde in {d}"),
+        "direct" => format!("{p} stations direct in {d}"),
         _ => {
             let mode = if st.is_empty() {
                 String::new()
             } else {
-                format!(" {}", st)
+                format!(" {st}")
             };
-            format!("{} {}{} {}", p, t, mode, d)
+            format!("{p} {t}{mode} {d}")
         }
     }
 }
@@ -1781,7 +1775,7 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         let house_system = match q.get("house_system") {
             Some(s) => match parse_house_system(s) {
                 Some(c) => c,
-                None => return bad_request(&format!("unknown house_system: {}", s)),
+                None => return bad_request(&format!("unknown house_system: {s}")),
             },
             None => 'P',
         };
@@ -1791,12 +1785,12 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         let tlon = q.get("longitude").and_then(|s| s.parse::<f64>().ok());
         if let (Some(la), Some(lo)) = (nlat, nlon) {
             for (n, a, b) in angle_points(natal_jd, la, lo, house_system) {
-                natal_extras.push((format!("natal {}", n), a, b));
+                natal_extras.push((format!("natal {n}"), a, b));
             }
         }
         if let (Some(la), Some(lo)) = (tlat, tlon) {
             for (n, a, b) in angle_points(transit_jd, la, lo, house_system) {
-                transit_extras.push((format!("transit {}", n), a, b));
+                transit_extras.push((format!("transit {n}"), a, b));
             }
         }
         if natal_extras.is_empty() && transit_extras.is_empty() {
@@ -1873,8 +1867,7 @@ async fn eclipses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         Some("lunar") => (false, true),
         Some(other) => {
             return bad_request(&format!(
-                "type must be one of: solar, lunar, both. Got: {}",
-                other
+                "type must be one of: solar, lunar, both. Got: {other}"
             ))
         }
     };
@@ -1923,7 +1916,7 @@ async fn houses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
             None => {
                 let known: Vec<String> = valid_house_systems()
                     .iter()
-                    .map(|(c, name)| format!("{}={}", c, name))
+                    .map(|(c, name)| format!("{c}={name}"))
                     .collect();
                 return bad_request(&format!(
                     "unknown house_system: {}. Known systems: {}",
@@ -1982,9 +1975,9 @@ async fn body_endpoint(
     let planet = match canonical {
         Some(c) => match body_for(c, jd) {
             Some(p) => p,
-            None => return not_found(&format!("unknown body: {}", name)),
+            None => return not_found(&format!("unknown body: {name}")),
         },
-        None => return not_found(&format!("unknown body: {}", name)),
+        None => return not_found(&format!("unknown body: {name}")),
     };
 
     let (ayan, ayan_name) = match parse_zodiac(&q, jd) {
@@ -2138,7 +2131,7 @@ async fn events_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
 
     let events = match get_events(&dbfile, jd_start, jd_end, limit, &filter) {
         Ok(v) => v,
-        Err(e) => return bad_request(&format!("event query failed: {}", e)),
+        Err(e) => return bad_request(&format!("event query failed: {e}")),
     };
 
     let mut out = Vec::with_capacity(events.len());
@@ -2187,12 +2180,12 @@ fn parse_observer_and_jd(
         .get("latitude")
         .map(|s| s.parse::<f64>())
         .transpose()
-        .map_err(|e| format!("invalid latitude: {}", e))?;
+        .map_err(|e| format!("invalid latitude: {e}"))?;
     let long = q
         .get("longitude")
         .map(|s| s.parse::<f64>())
         .transpose()
-        .map_err(|e| format!("invalid longitude: {}", e))?;
+        .map_err(|e| format!("invalid longitude: {e}"))?;
     let latlong = match (lat, long) {
         (Some(la), Some(lo)) => Some(LatLong::new(la, lo).map_err(|s| s.to_string())?),
         (None, None) => None,

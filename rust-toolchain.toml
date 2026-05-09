@@ -1,0 +1,9 @@
+# Pin the Rust toolchain so Docker, CI, and local builds all agree.
+# 1.88 is the floor: a transitive dep (home@0.5.12) requires
+# edition2024, which stabilised in 1.85, but other deps in the lockfile
+# require 1.88+. Bumping is fine; pinning below 1.88 will fail to
+# resolve dependencies.
+[toolchain]
+channel = "1.88"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
