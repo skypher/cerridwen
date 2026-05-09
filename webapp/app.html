@@ -167,6 +167,7 @@
       </select>
     </label>
     <button id="ctx-refresh" class="primary">refresh</button>
+    <span id="conn-status" title="connection status" style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#27ae60; margin-left:0.5rem"></span>
   </div>
 </header>
 
@@ -447,15 +448,33 @@ function buildQs(extra = {}) {
 
 async function api(path, qs = '') {
   const url = path + (qs ? '?' + qs : '');
-  const r = await fetch(url);
-  const t = await r.text();
-  let j;
-  try { j = JSON.parse(t); } catch { j = t; }
-  if (!r.ok) {
-    const msg = typeof j === 'string' ? j : (j.message || JSON.stringify(j));
-    throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+  try {
+    const r = await fetch(url);
+    const t = await r.text();
+    let j;
+    try { j = JSON.parse(t); } catch { j = t; }
+    if (!r.ok) {
+      setConnStatus(false, `${r.status} ${r.statusText}`);
+      const msg = typeof j === 'string' ? j : (j.message || JSON.stringify(j));
+      throw new Error(`${r.status} ${r.statusText}: ${msg}`);
+    }
+    setConnStatus(true);
+    return j;
+  } catch (e) {
+    if (!(e instanceof Error && /^[0-9]/.test(e.message))) {
+      // Network error (TypeError from fetch) — distinct from a 4xx/5xx that
+      // the server reachably returned.
+      setConnStatus(false, e.message || 'network error');
+    }
+    throw e;
   }
-  return j;
+}
+
+function setConnStatus(ok, label) {
+  const el = document.getElementById('conn-status');
+  if (!el) return;
+  el.style.background = ok ? '#27ae60' : '#e74c3c';
+  el.title = ok ? 'connected' : ('connection error: ' + (label || ''));
 }
 
 function showError(el, e) {

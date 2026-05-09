@@ -22,12 +22,11 @@ pub use crate::defs::{Aspect, ASPECTS, SIGNS, SIGN_RELATED_ASPECTS, TRADITIONAL_
 pub use crate::planets::{
     angle_points, apply_ayanamsha, compute_aspects_at, compute_aspects_extended, compute_ayanamsha,
     compute_houses, compute_transits, compute_transits_extended, default_transit_bodies,
-    eclipses_within_period, fixed_star,
-    next_eclipse, next_return, parse_ayanamsha, parse_house_system, valid_house_systems,
-    ActiveTransit, Ascendant, Body, Ceres, Chiron, Eclipse, EclipseKind, EclipseSearch, FixedStar,
-    FixedZodiacPoint, Houses, InstantAspect, Juno, Jupiter, Lilith, Mars, MeanNode, Mercury, Moon,
-    MoonPhaseData, Neptune, Pallas, Planet, PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun,
-    TrueNode, Uranus, Venus, Vesta,
+    eclipses_within_period, fixed_star, next_eclipse, next_return, parse_ayanamsha,
+    parse_house_system, valid_house_systems, ActiveTransit, Ascendant, Body, Ceres, Chiron,
+    Eclipse, EclipseKind, EclipseSearch, FixedStar, FixedZodiacPoint, Houses, InstantAspect, Juno,
+    Jupiter, Lilith, Mars, MeanNode, Mercury, Moon, MoonPhaseData, Neptune, Pallas, Planet,
+    PlanetEvent, PlanetLongitude, Pluto, Saturn, Sun, TrueNode, Uranus, Venus, Vesta,
 };
 pub use crate::utils::{
     angle_to_aspect_name, aspect_name_to_angle, days_frac_to_dhms, iso2jd, jd2iso, jd_now,
@@ -272,9 +271,7 @@ pub mod events {
         }
         fn keep(&self, t: &str, st: &str, p: &str, d: &str) -> bool {
             let pass = |allow: &Option<Vec<String>>, val: &str| {
-                allow
-                    .as_ref()
-                    .is_none_or(|xs| xs.iter().any(|x| x == val))
+                allow.as_ref().is_none_or(|xs| xs.iter().any(|x| x == val))
             };
             pass(&self.types, t)
                 && pass(&self.subtypes, st)

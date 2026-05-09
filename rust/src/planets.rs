@@ -1544,7 +1544,9 @@ pub fn compute_transits_extended(
     let mut transit_points: Vec<(String, f64, f64)> = bodies
         .iter()
         .filter_map(|&id| {
-            let now = swe::calc_ut(transit_jd, id as u32, SEFLG_SWIEPH as u32).ok()?.out[0];
+            let now = swe::calc_ut(transit_jd, id as u32, SEFLG_SWIEPH as u32)
+                .ok()?
+                .out[0];
             let next = swe::calc_ut(transit_jd + dt, id as u32, SEFLG_SWIEPH as u32)
                 .map(|r| r.out[0])
                 .unwrap_or(now);
@@ -1626,7 +1628,7 @@ pub fn fixed_star(name: &str, jd_ut: f64) -> Result<FixedStar, String> {
         let code = raw::swe_fixstar_ut(
             star_buf.as_mut_ptr(),
             jd_ut,
-            SEFLG_SWIEPH | SEFLG_SPEED ,
+            SEFLG_SWIEPH | SEFLG_SPEED,
             xx.as_mut_ptr(),
             serr.as_mut_ptr(),
         );

@@ -43,6 +43,25 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1")]
     bind: String,
 
+    /// Log output format. `text` is the default human-readable form;
+    /// `json` emits one JSON object per line for log aggregators.
+    /// Env: `CERRIDWEN_LOG_FORMAT`.
+    #[arg(long, env = "CERRIDWEN_LOG_FORMAT", default_value = "text")]
+    log_format: String,
+
+    /// Comma-separated list of allowed CORS origins. Empty = allow any (*).
+    /// Env: `CERRIDWEN_CORS_ORIGINS`.
+    #[arg(long, env = "CERRIDWEN_CORS_ORIGINS", default_value = "")]
+    cors_origins: String,
+
+    /// Optional API key. When set, all `/v1/*` requests must carry an
+    /// `X-API-Key` header matching this value. `/health`, `/metrics`,
+    /// `/openapi.json`, `/docs`, `/app`, `/chart`, `/favicon.ico`,
+    /// `/robots.txt`, and `/` are always public.
+    /// Env: `CERRIDWEN_API_KEY`.
+    #[arg(long, env = "CERRIDWEN_API_KEY", default_value = "")]
+    api_key: String,
+
     #[arg(short, long, default_value_t = 2828)]
     port: u16,
 
@@ -67,16 +86,28 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    // Structured logging — RUST_LOG=info,cerridwen_server=debug or similar.
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
-
     let args = Args::parse();
+
+    // Structured logging — RUST_LOG=info,cerridwen_server=debug or similar.
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    match args.log_format.as_str() {
+        "json" => {
+            tracing_subscriber::fmt()
+                .json()
+                .flatten_event(true)
+                .with_current_span(false)
+                .with_env_filter(env_filter)
+                .with_target(false)
+                .init();
+        }
+        _ => {
+            tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_target(false)
+                .init();
+        }
+    }
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
         let data = compute_moon_data_with(None, Some(observer), MoonOptions::default());
@@ -92,10 +123,35 @@ async fn main() {
         Duration::from_secs(args.rate_limit_window),
         args.rate_limit_max,
     );
-    let cors = tower_http::cors::CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
-        .allow_methods([axum::http::Method::GET, axum::http::Method::OPTIONS])
-        .allow_headers(tower_http::cors::Any);
+    METRICS
+        .rate_limit_max
+        .store(args.rate_limit_max as u64, Ordering::Relaxed);
+    METRICS
+        .rate_limit_window_seconds
+        .store(args.rate_limit_window, Ordering::Relaxed);
+    METRICS
+        .cache_ttl_seconds
+        .store(args.cache_ttl, Ordering::Relaxed);
+    // Build the CORS layer based on the --cors-origins setting.
+    let cors_methods = [axum::http::Method::GET, axum::http::Method::OPTIONS];
+    let cors = if args.cors_origins.is_empty() {
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(cors_methods)
+            .allow_headers(tower_http::cors::Any)
+    } else {
+        let origins: Vec<HeaderValue> = args
+            .cors_origins
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| HeaderValue::from_str(s).ok())
+            .collect();
+        tower_http::cors::CorsLayer::new()
+            .allow_origin(origins)
+            .allow_methods(cors_methods)
+            .allow_headers(tower_http::cors::Any)
+    };
     let app = Router::new()
         .route("/v1/sun", get(sun_endpoint))
         .route("/v1/moon", get(moon_endpoint))
@@ -118,6 +174,7 @@ async fn main() {
         .route("/app", get(app_endpoint))
         .route("/", get(app_endpoint))
         .route("/favicon.ico", get(favicon_endpoint))
+        .route("/robots.txt", get(robots_endpoint))
         .route("/health", get(health_endpoint))
         .route("/metrics", get(metrics_endpoint))
         .layer(middleware::from_fn_with_state(
@@ -127,6 +184,32 @@ async fn main() {
         .layer(middleware::from_fn_with_state(
             rate_limiter,
             rate_limit_middleware,
+        ));
+    // API-key gate sits OUTSIDE the rate limit + cache so unauthenticated
+    // requests don't poison either; only attach when configured.
+    let app = if args.api_key.is_empty() {
+        app
+    } else {
+        let key = Arc::new(args.api_key.clone());
+        app.layer(middleware::from_fn_with_state(key, api_key_middleware))
+    };
+    let app = app
+        // Compress JSON / text / openapi responses. Streams remain
+        // uncompressed because they're already line-delimited and
+        // gzip-buffered SSE would defeat its real-time nature.
+        .layer(tower_http::compression::CompressionLayer::new())
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(64 * 1024))
+        // Generate a request id, propagate it back as the x-request-id
+        // response header, and log it as part of the trace span so server
+        // logs and client errors line up. tower-http's .layer chain applies
+        // outermost-last, so SetRequestId must come AFTER PropagateRequestId
+        // for the propagation layer to see the id on the way back out.
+        .layer(tower_http::request_id::PropagateRequestIdLayer::new(
+            axum::http::HeaderName::from_static("x-request-id"),
+        ))
+        .layer(tower_http::request_id::SetRequestIdLayer::new(
+            axum::http::HeaderName::from_static("x-request-id"),
+            RequestIdGen,
         ))
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .layer(cors)
@@ -145,7 +228,51 @@ async fn main() {
         "starting cerridwen-server"
     );
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+}
+
+/// Per-request UUID generator. Cheap (a process-counter-based ID),
+/// non-cryptographic; collisions across restarts don't matter.
+#[derive(Clone, Copy)]
+struct RequestIdGen;
+impl tower_http::request_id::MakeRequestId for RequestIdGen {
+    fn make_request_id<B>(&mut self, _: &Request<B>) -> Option<tower_http::request_id::RequestId> {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // Pid + counter so multiple workers don't collide cross-restart.
+        let id = format!("{:x}-{:x}", std::process::id(), n);
+        Some(tower_http::request_id::RequestId::new(
+            axum::http::HeaderValue::from_str(&id).ok()?,
+        ))
+    }
+}
+
+/// Wait for SIGINT (Ctrl-C) or SIGTERM. axum's `with_graceful_shutdown`
+/// then drains in-flight requests before returning.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install Ctrl-C handler");
+    };
+    #[cfg(unix)]
+    let term = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        signal(SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let term = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("ctrl-c received, draining"),
+        _ = term => tracing::info!("SIGTERM received, draining"),
+    }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -467,28 +594,28 @@ fn parse_interval_seconds(opt: Option<&String>) -> u64 {
         .unwrap_or(60)
 }
 
-async fn stream_sun_endpoint(
-    Query(q): Query<HashMap<String, String>>,
-) -> Response {
+async fn stream_sun_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
     let zod = match parse_stream_zodiac(&q) {
         Ok(z) => z,
         Err(e) => return bad_request(&e),
     };
     let stream = position_stream("Sun".to_string(), interval, zod);
-    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
-async fn stream_moon_endpoint(
-    Query(q): Query<HashMap<String, String>>,
-) -> Response {
+async fn stream_moon_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
     let interval = parse_interval_seconds(q.get("interval"));
     let zod = match parse_stream_zodiac(&q) {
         Ok(z) => z,
         Err(e) => return bad_request(&e),
     };
     let stream = position_stream("Moon".to_string(), interval, zod);
-    Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
 }
 
 async fn stream_body_endpoint(
@@ -511,9 +638,7 @@ async fn stream_body_endpoint(
 }
 
 /// Returns Ok(None) for tropical, Ok(Some((mode, label))) for sidereal.
-fn parse_stream_zodiac(
-    q: &HashMap<String, String>,
-) -> Result<Option<(i32, &'static str)>, String> {
+fn parse_stream_zodiac(q: &HashMap<String, String>) -> Result<Option<(i32, &'static str)>, String> {
     match q.get("zodiac").map(|s| s.to_ascii_lowercase()).as_deref() {
         None | Some("") | Some("tropical") => Ok(None),
         Some("sidereal") => {
@@ -577,7 +702,14 @@ fn position_stream(
 }
 
 async fn openapi_endpoint() -> Response {
-    json_ok(openapi_spec())
+    let mut resp = json_ok(openapi_spec());
+    // OpenAPI spec rarely changes within a deployment, so let intermediaries
+    // and clients cache for an hour.
+    resp.headers_mut().insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=3600"),
+    );
+    resp
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -619,6 +751,44 @@ impl RateLimiter {
         }
         true
     }
+}
+
+/// API-key gate. Static state-less middleware with the configured key
+/// captured at start-up. /v1/* is gated; everything else is public.
+async fn api_key_middleware(
+    axum::extract::State(key): axum::extract::State<Arc<String>>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = req.uri().path();
+    if !path.starts_with("/v1/") {
+        return next.run(req).await;
+    }
+    let presented = req
+        .headers()
+        .get("x-api-key")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    // Constant-time comparison to avoid timing leaks.
+    let expected: &[u8] = key.as_bytes();
+    let got: &[u8] = presented.as_bytes();
+    let ok = expected.len() == got.len()
+        && expected
+            .iter()
+            .zip(got.iter())
+            .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+            == 0;
+    if !ok {
+        let mut resp = (
+            StatusCode::UNAUTHORIZED,
+            "missing or invalid X-API-Key\n".to_string(),
+        )
+            .into_response();
+        resp.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("text/plain"));
+        return resp;
+    }
+    next.run(req).await
 }
 
 async fn rate_limit_middleware(
@@ -678,6 +848,11 @@ struct Metrics {
     rate_limited: AtomicU64,
     /// status_2xx, _3xx, _4xx, _5xx
     status_classes: [AtomicU64; 4],
+    /// Snapshot of rate-limit configuration for monitoring.
+    rate_limit_max: AtomicU64,
+    rate_limit_window_seconds: AtomicU64,
+    /// Snapshot of cache TTL for monitoring.
+    cache_ttl_seconds: AtomicU64,
 }
 
 impl Metrics {
@@ -693,8 +868,7 @@ impl Metrics {
     }
 }
 
-static METRICS: once_cell::sync::Lazy<Metrics> =
-    once_cell::sync::Lazy::new(Metrics::default);
+static METRICS: once_cell::sync::Lazy<Metrics> = once_cell::sync::Lazy::new(Metrics::default);
 
 // ------------------------------------------------------------------------------------------------
 // Liveness + metrics
@@ -704,11 +878,37 @@ static SERVER_STARTED_AT: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy
 
 async fn health_endpoint() -> Response {
     let uptime = SERVER_STARTED_AT.elapsed().as_secs();
-    json_ok(json!({
-        "status": "ok",
+    // Real liveness check: the server is only useful if Swiss Ephemeris
+    // can compute *something*. Compute the Sun's longitude at jd_now and
+    // verify we get a sane value back. If sweph is broken (missing files,
+    // wrong path, panic), fail closed with 503.
+    let ephe_ok = std::panic::catch_unwind(|| {
+        use cerridwen::planets::{Planet, SE_SUN};
+        let jd = cerridwen::jd_now();
+        let p = Planet::new(SE_SUN, Some(jd), None);
+        let lon = p.longitude_at(jd);
+        lon.is_finite() && (0.0..=360.0).contains(&lon)
+    })
+    .unwrap_or(false);
+
+    let status_str = if ephe_ok { "ok" } else { "degraded" };
+    let body = json!({
+        "status": status_str,
         "version": env!("CARGO_PKG_VERSION"),
         "uptime_seconds": uptime,
-    }))
+        "ephemeris_ok": ephe_ok,
+    });
+    let code = if ephe_ok {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    let mut resp = (code, body.to_string()).into_response();
+    resp.headers_mut()
+        .insert("Content-Type", HeaderValue::from_static("application/json"));
+    resp.headers_mut()
+        .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
+    resp
 }
 
 async fn metrics_endpoint(
@@ -751,15 +951,51 @@ async fn metrics_endpoint(
          cerridwen_responses_total{{class=\"3xx\"}} {s3}\n\
          cerridwen_responses_total{{class=\"4xx\"}} {s4}\n\
          cerridwen_responses_total{{class=\"5xx\"}} {s5}\n\
+         # HELP cerridwen_rate_limit_max Configured per-client request limit\n\
+         # TYPE cerridwen_rate_limit_max gauge\n\
+         cerridwen_rate_limit_max {rl_max}\n\
+         # HELP cerridwen_rate_limit_window_seconds Rate-limit window in seconds\n\
+         # TYPE cerridwen_rate_limit_window_seconds gauge\n\
+         cerridwen_rate_limit_window_seconds {rl_win}\n\
+         # HELP cerridwen_cache_ttl_seconds Configured response-cache TTL\n\
+         # TYPE cerridwen_cache_ttl_seconds gauge\n\
+         cerridwen_cache_ttl_seconds {cache_ttl}\n\
          # HELP cerridwen_build_info Static build info\n\
          # TYPE cerridwen_build_info gauge\n\
          cerridwen_build_info{{version=\"{ver}\"}} 1\n",
+        rl_max = METRICS.rate_limit_max.load(Ordering::Relaxed),
+        rl_win = METRICS.rate_limit_window_seconds.load(Ordering::Relaxed),
+        cache_ttl = METRICS.cache_ttl_seconds.load(Ordering::Relaxed),
         ver = env!("CARGO_PKG_VERSION"),
     );
     let mut resp = (StatusCode::OK, body).into_response();
     resp.headers_mut().insert(
         "Content-Type",
         HeaderValue::from_static("text/plain; version=0.0.4"),
+    );
+    resp
+}
+
+async fn robots_endpoint() -> Response {
+    // Block crawlers from /v1/* (every hit is a real compute cycle and
+    // many of the endpoints are expensive). Allow the landing page,
+    // chart wheel, OpenAPI spec, and rapidoc UI — those are static-ish
+    // and useful for indexing.
+    let body = "User-agent: *\n\
+                Disallow: /v1/\n\
+                Allow: /\n\
+                Allow: /app\n\
+                Allow: /chart\n\
+                Allow: /docs\n\
+                Allow: /openapi.json\n";
+    let mut resp = (StatusCode::OK, body.to_string()).into_response();
+    resp.headers_mut().insert(
+        "Content-Type",
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    resp.headers_mut().insert(
+        "Cache-Control",
+        HeaderValue::from_static("public, max-age=86400"),
     );
     resp
 }
@@ -1428,15 +1664,25 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
     // Optional roster opt-ins, mirroring /v1/aspects.
     let include_set: std::collections::HashSet<String> = q
         .get("include")
-        .map(|s| s.split(',').map(|x| x.trim().to_ascii_lowercase()).collect())
+        .map(|s| {
+            s.split(',')
+                .map(|x| x.trim().to_ascii_lowercase())
+                .collect()
+        })
         .unwrap_or_default();
     let mut bodies: Vec<i32> = default_transit_bodies().to_vec();
     use cerridwen::planets::{
         SE_CERES, SE_CHIRON, SE_JUNO, SE_MEAN_APOG, SE_MEAN_NODE, SE_PALLAS, SE_VESTA,
     };
-    if include_set.contains("nodes") { bodies.push(SE_MEAN_NODE); }
-    if include_set.contains("lilith") { bodies.push(SE_MEAN_APOG); }
-    if include_set.contains("chiron") { bodies.push(SE_CHIRON); }
+    if include_set.contains("nodes") {
+        bodies.push(SE_MEAN_NODE);
+    }
+    if include_set.contains("lilith") {
+        bodies.push(SE_MEAN_APOG);
+    }
+    if include_set.contains("chiron") {
+        bodies.push(SE_CHIRON);
+    }
     if include_set.contains("asteroids") {
         bodies.extend([SE_CERES, SE_PALLAS, SE_JUNO, SE_VESTA]);
     }
@@ -1472,12 +1718,18 @@ async fn transits_endpoint(Query(q): Query<HashMap<String, String>>) -> Response
         if natal_extras.is_empty() && transit_extras.is_empty() {
             return bad_request(
                 "include_angles=1 requires natal_latitude+natal_longitude \
-                 and/or latitude+longitude (for the transit moment)");
+                 and/or latitude+longitude (for the transit moment)",
+            );
         }
     }
 
     let active = compute_transits_extended(
-        natal_jd, transit_jd, &bodies, &natal_extras, &transit_extras, orb,
+        natal_jd,
+        transit_jd,
+        &bodies,
+        &natal_extras,
+        &transit_extras,
+        orb,
     );
     let arr: Vec<Value> = active.iter().map(transit_to_json).collect();
     let mut o = serde_json::Map::new();

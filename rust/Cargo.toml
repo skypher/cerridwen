@@ -49,11 +49,11 @@ serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
 rusqlite = { version = "0.32", features = ["bundled"], optional = true }
 axum = { version = "0.7", optional = true }
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"], optional = true }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time", "signal"], optional = true }
 futures-util = { version = "0.3", optional = true }
-tower-http = { version = "0.5", features = ["cors", "fs", "trace"], optional = true }
+tower-http = { version = "0.5", features = ["cors", "fs", "trace", "compression-gzip", "compression-br", "limit", "request-id"], optional = true }
 tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"], optional = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], optional = true }
 
 [dev-dependencies]
 approx = "0.5"

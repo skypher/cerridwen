@@ -135,20 +135,24 @@ impl HttpResponse {
                 break;
             }
             if let Some((k, v)) = line.split_once(':') {
-                headers.push((
-                    k.trim().to_ascii_lowercase(),
-                    v.trim().to_string(),
-                ));
+                headers.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
             }
         }
         let mut body = String::new();
         reader.read_to_string(&mut body).expect("body");
-        HttpResponse { status, headers, body }
+        HttpResponse {
+            status,
+            headers,
+            body,
+        }
     }
 
     fn header(&self, name: &str) -> Option<&str> {
         let n = name.to_ascii_lowercase();
-        self.headers.iter().find(|(k, _)| *k == n).map(|(_, v)| v.as_str())
+        self.headers
+            .iter()
+            .find(|(k, _)| *k == n)
+            .map(|(_, v)| v.as_str())
     }
 }
 
@@ -159,7 +163,8 @@ fn health_returns_ok_with_version() {
     let s = Server::spawn();
     let r = s.get("/health");
     assert_eq!(r.status, 200);
-    assert!(r.body.contains("\"status\": \"ok\""));
+    // Body is compact JSON; tolerate both compact and pretty-printed forms.
+    assert!(r.body.contains("\"status\":\"ok\"") || r.body.contains("\"status\": \"ok\""));
     assert!(r.body.contains("\"version\""));
     assert!(r.body.contains("\"uptime_seconds\""));
 }
@@ -180,7 +185,10 @@ fn metrics_exposes_prometheus_format() {
     assert!(r.body.contains("cerridwen_requests_total"));
     assert!(r.body.contains("cerridwen_responses_total"));
     assert!(r.body.contains("cerridwen_build_info"));
-    assert!(r.header("content-type").unwrap_or("").contains("text/plain"));
+    assert!(r
+        .header("content-type")
+        .unwrap_or("")
+        .contains("text/plain"));
 }
 
 // ---------------- cache ----------------
@@ -287,6 +295,57 @@ fn aspects_include_angles_with_observer_works() {
     let _ = r.body.contains("Ascendant") || r.body.contains("Midheaven");
 }
 
+// ---------------- request-id ----------------
+
+#[test]
+fn request_id_assigned_when_absent() {
+    let s = Server::spawn();
+    let r = s.get("/v1/sun");
+    assert!(r.header("x-request-id").is_some());
+}
+
+#[test]
+fn request_id_preserved_when_provided() {
+    let s = Server::spawn();
+    let r = s.get_with_headers("/v1/sun", &[("x-request-id", "client-trace-xyz")]);
+    assert_eq!(r.header("x-request-id"), Some("client-trace-xyz"));
+}
+
+// ---------------- robots ----------------
+
+#[test]
+fn robots_blocks_v1() {
+    let s = Server::spawn();
+    let r = s.get("/robots.txt");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("Disallow: /v1/"));
+}
+
+// ---------------- api-key ----------------
+
+#[test]
+fn api_key_gate_when_configured() {
+    let s = Server::spawn_with(&["--api-key", "secret"]);
+    let r1 = s.get("/v1/sun");
+    assert_eq!(r1.status, 401);
+    let r2 = s.get_with_headers("/v1/sun", &[("X-API-Key", "secret")]);
+    assert_eq!(r2.status, 200);
+    let r3 = s.get_with_headers("/v1/sun", &[("X-API-Key", "wrong")]);
+    assert_eq!(r3.status, 401);
+    // Public endpoints unaffected.
+    let r4 = s.get("/health");
+    assert_eq!(r4.status, 200);
+}
+
+// ---------------- /health deeper check ----------------
+
+#[test]
+fn health_indicates_ephemeris_ok() {
+    let s = Server::spawn();
+    let r = s.get("/health");
+    assert!(r.body.contains("\"ephemeris_ok\":true") || r.body.contains("\"ephemeris_ok\": true"));
+}
+
 // ---------------- empty-filter regression ----------------
 
 #[test]
@@ -299,5 +358,9 @@ fn events_empty_filter_doesnt_silence_results() {
     // Acceptable: 400 (no DB) or 200 with whatever the DB happens to hold.
     // What's NOT acceptable is silent zero-list when the DB is populated;
     // that's the bug we fixed.
-    assert!(r.status == 200 || r.status == 400, "got status {}", r.status);
+    assert!(
+        r.status == 200 || r.status == 400,
+        "got status {}",
+        r.status
+    );
 }

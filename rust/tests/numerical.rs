@@ -57,7 +57,11 @@ fn moon_period_length() {
 #[test]
 fn next_new_moon() {
     let m = Moon::at_jd(2456794.9541666);
-    assert_abs_diff_eq!(m.next_new_moon(None).jd, 2_456_806.277_929_372, epsilon = TOL);
+    assert_abs_diff_eq!(
+        m.next_new_moon(None).jd,
+        2_456_806.277_929_372,
+        epsilon = TOL
+    );
 }
 
 #[test]
