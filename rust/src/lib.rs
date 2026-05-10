@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! # cerridwen
 //!
 //! Geocentric planetary data — Sun, Moon, and the major planets — backed by

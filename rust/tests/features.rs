@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! Tests for the post-port features: nodes/asteroids/Lilith, houses,
 //! eclipses, transits, returns, stars, ayanamshas, time-zones.
 

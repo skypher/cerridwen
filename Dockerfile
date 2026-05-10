@@ -10,9 +10,9 @@
 # Run:
 #   docker run -p 2828:2828 cerridwen
 
-FROM rust:1.88-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.88-bookworm AS builder
 
-# bindgen needs libclang.
+# bindgen needs libclang. The image is multi-arch (amd64, arm64).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libclang-dev \
         clang \

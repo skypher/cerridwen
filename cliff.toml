@@ -1,0 +1,44 @@
+# git-cliff configuration. Generates CHANGELOG.md from conventional
+# commits.
+#
+# Local: git cliff --output CHANGELOG.md
+# CI:    a release-tag workflow runs `git cliff --tag $TAG -p CHANGELOG.md`.
+
+[changelog]
+header = "# Changelog\n\nAll notable changes to the Rust port. Pre-1.x dates predate the port and live in `NEWS.rst`.\n\n"
+body = """
+{% if version %}\
+    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+    ## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+    ### {{ group | upper_first }}
+    {% for commit in commits %}\
+        * {{ commit.message | upper_first }}\
+    {% endfor %}
+{% endfor %}\n
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_parsers = [
+    { message = "^feat", group = "Added" },
+    { message = "^add", group = "Added" },
+    { message = "^fix", group = "Fixed" },
+    { message = "^doc", group = "Documentation" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Changed" },
+    { message = "^style", skip = true },
+    { message = "^test", group = "Tests" },
+    { message = "^chore\\(deps\\)", group = "Dependencies" },
+    { message = "^chore", skip = true },
+    { message = "^ci", skip = true },
+    { body = ".*security", group = "Security" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"

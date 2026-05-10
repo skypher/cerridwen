@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! Numerical tests ported from cerridwen/tests.py.
 //!
 //! Reference values come from running the original Python suite, which

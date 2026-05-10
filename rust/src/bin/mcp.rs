@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! cerridwen-mcp — Model Context Protocol server speaking JSON-RPC 2.0 over
 //! stdio. Lets LLM agents (Claude Code, IDE clients, etc.) call cerridwen
 //! as a tool.

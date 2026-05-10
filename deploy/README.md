@@ -8,6 +8,14 @@ Drop-in configurations for running `cerridwen-server` in production.
 # Build the image (multi-stage, ~150 MB final).
 docker build -t cerridwen .
 
+# Multi-arch build (amd64 + arm64) using buildx:
+docker buildx create --use --name cerridwen-builder
+docker buildx build \
+  --platform linux/amd64,linux/arm64 \
+  --tag your-registry/cerridwen:latest \
+  --push \
+  .
+
 # Run with the default port.
 docker run -p 2828:2828 --name cerridwen cerridwen
 

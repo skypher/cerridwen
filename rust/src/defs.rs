@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use std::cell::Cell;
 use std::ffi::CString;
 use std::path::PathBuf;

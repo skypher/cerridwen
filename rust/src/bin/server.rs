@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -49,6 +51,12 @@ struct Args {
     #[arg(long, env = "CERRIDWEN_LOG_FORMAT", default_value = "text")]
     log_format: String,
 
+    /// Optional log file directory; logs rotate daily as
+    /// `cerridwen.log.YYYY-MM-DD`. Empty = stderr only.
+    /// Env: `CERRIDWEN_LOG_DIR`.
+    #[arg(long, env = "CERRIDWEN_LOG_DIR", default_value = "")]
+    log_dir: String,
+
     /// Comma-separated list of allowed CORS origins. Empty = allow any (*).
     /// Env: `CERRIDWEN_CORS_ORIGINS`.
     #[arg(long, env = "CERRIDWEN_CORS_ORIGINS", default_value = "")]
@@ -91,23 +99,43 @@ async fn main() {
     // Structured logging — RUST_LOG=info,cerridwen_server=debug or similar.
     let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    match args.log_format.as_str() {
-        "json" => {
-            tracing_subscriber::fmt()
+    // Hold a guard if we're rotating to a file so the appender's
+    // background thread keeps running for the lifetime of main.
+    let _log_guard = if !args.log_dir.is_empty() {
+        let appender = tracing_appender::rolling::daily(&args.log_dir, "cerridwen.log");
+        let (nb, guard) = tracing_appender::non_blocking(appender);
+        match args.log_format.as_str() {
+            "json" => tracing_subscriber::fmt()
                 .json()
                 .flatten_event(true)
                 .with_current_span(false)
                 .with_env_filter(env_filter)
                 .with_target(false)
-                .init();
-        }
-        _ => {
-            tracing_subscriber::fmt()
+                .with_writer(nb)
+                .init(),
+            _ => tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
                 .with_target(false)
-                .init();
+                .with_writer(nb)
+                .init(),
         }
-    }
+        Some(guard)
+    } else {
+        match args.log_format.as_str() {
+            "json" => tracing_subscriber::fmt()
+                .json()
+                .flatten_event(true)
+                .with_current_span(false)
+                .with_env_filter(env_filter)
+                .with_target(false)
+                .init(),
+            _ => tracing_subscriber::fmt()
+                .with_env_filter(env_filter)
+                .with_target(false)
+                .init(),
+        }
+        None
+    };
     if args.test {
         let observer = LatLong::new(52.0, 13.0).unwrap();
         let data = compute_moon_data_with(None, Some(observer), MoonOptions::default());
@@ -168,6 +196,7 @@ async fn main() {
         .route("/v1/stream/sun", get(stream_sun_endpoint))
         .route("/v1/stream/moon", get(stream_moon_endpoint))
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
+        .route("/v1/stream/events", get(stream_events_endpoint))
         .route("/openapi.json", get(openapi_endpoint))
         .route("/docs", get(docs_endpoint))
         .route("/chart", get(chart_endpoint))
@@ -669,6 +698,87 @@ fn parse_stream_zodiac(q: &HashMap<String, String>) -> Result<Option<(i32, &'sta
     }
 }
 
+async fn stream_events_endpoint(
+    headers: axum::http::HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    use cerridwen::events::{get_events, EventFilter};
+    let dbfile = std::env::var("CERRIDWEN_EVENTS_DB").unwrap_or_else(|_| "events.db".into());
+
+    let tz = q.get("tz").map(|s| s.as_str());
+    let jd_start = match q.get("date_start") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let jd_end = match q.get("date_end") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_start + 30.0,
+    };
+    let split = |key: &str| -> Option<Vec<String>> {
+        q.get(key)
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .filter(|v: &Vec<String>| !v.is_empty())
+    };
+    let filter = EventFilter {
+        types: split("types"),
+        subtypes: split("subtypes"),
+        planets: split("planets"),
+        datas: split("datas"),
+    };
+    let events = match get_events(&dbfile, jd_start, jd_end, i64::MAX, &filter) {
+        Ok(v) => v,
+        Err(e) => return bad_request(&format!("event query failed: {e}")),
+    };
+
+    let start_id = parse_last_event_id(&headers);
+    // Honour Last-Event-ID by skipping the (start_id) earliest events.
+    let skip = start_id as usize;
+    let interval_ms = q
+        .get("interval_ms")
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(50)
+        .clamp(1, 5_000);
+
+    let stream = stream::unfold(
+        (events.into_iter().skip(skip).enumerate(), interval_ms),
+        move |(mut iter, ms)| async move {
+            tokio::time::sleep(Duration::from_millis(ms)).await;
+            let (idx, ev) = iter.next()?;
+            let id = (start_id + 1) + idx as u64;
+            let payload = json!({
+                "jd": ev.jd,
+                "iso_date": ev.iso_date,
+                "type": ev.r#type,
+                "subtype": ev.subtype,
+                "planet": ev.planet,
+                "data": ev.data,
+                "delta_days": ev.delta_days,
+            });
+            let event = SseEvent::default()
+                .event("event")
+                .id(id.to_string())
+                .data(payload.to_string());
+            Some((Ok::<_, Infallible>(event), (iter, ms)))
+        },
+    );
+
+    Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response()
+}
+
 fn position_stream(
     canonical: String,
     interval_seconds: u64,
@@ -745,6 +855,13 @@ struct RateLimiter {
     max: usize,
 }
 
+struct RateLimitDecision {
+    allowed: bool,
+    /// Seconds until the oldest entry in the client's window expires.
+    /// Only meaningful when `allowed = false`.
+    retry_after_seconds: u64,
+}
+
 impl RateLimiter {
     fn new(window: Duration, max: usize) -> Self {
         Self {
@@ -753,14 +870,28 @@ impl RateLimiter {
             max,
         }
     }
-    /// Returns true if the request is allowed, false if rate-limited.
-    async fn check(&self, key: &str) -> bool {
+    /// Returns the decision plus, when denied, the seconds the client
+    /// should wait before retrying — derived from when the oldest
+    /// in-window timestamp falls off.
+    async fn check(&self, key: &str) -> RateLimitDecision {
         let mut g = self.inner.write().await;
         let now = Instant::now();
         let entry = g.entry(key.to_string()).or_default();
         entry.retain(|t| now.duration_since(*t) < self.window);
         if entry.len() >= self.max {
-            return false;
+            // The oldest timestamp is the one that will fall off first.
+            let oldest = *entry.iter().min().unwrap_or(&now);
+            let elapsed = now.duration_since(oldest);
+            let remaining = self
+                .window
+                .checked_sub(elapsed)
+                .unwrap_or_else(|| Duration::from_secs(0));
+            // Round up so a partial second still tells the client to wait.
+            let secs = remaining.as_secs() + u64::from(remaining.subsec_millis() > 0);
+            return RateLimitDecision {
+                allowed: false,
+                retry_after_seconds: secs,
+            };
         }
         entry.push(now);
         // Opportunistic GC: trim the map periodically.
@@ -768,20 +899,32 @@ impl RateLimiter {
             let cutoff = self.window;
             g.retain(|_, ts| ts.iter().any(|t| now.duration_since(*t) < cutoff));
         }
-        true
+        RateLimitDecision {
+            allowed: true,
+            retry_after_seconds: 0,
+        }
     }
 }
 
 /// Time every request and feed the duration into the latency histogram.
+/// Also surfaces the duration as a `Server-Timing` response header so
+/// browsers see it in the network tab without parsing /metrics.
 /// Streams aren't measured (their wall-clock is dominated by the
 /// keep-alive interval, not real work).
 async fn latency_middleware(req: Request<Body>, next: Next) -> Response {
     if req.uri().path().starts_with("/v1/stream/") {
         return next.run(req).await;
     }
+    METRICS.in_flight.fetch_add(1, Ordering::Relaxed);
     let start = Instant::now();
-    let resp = next.run(req).await;
-    METRICS.observe_latency(start.elapsed());
+    let mut resp = next.run(req).await;
+    let elapsed = start.elapsed();
+    METRICS.observe_latency(elapsed);
+    METRICS.in_flight.fetch_sub(1, Ordering::Relaxed);
+    let ms = elapsed.as_secs_f64() * 1000.0;
+    if let Ok(v) = HeaderValue::from_str(&format!("total;dur={ms:.1}")) {
+        resp.headers_mut().insert("Server-Timing", v);
+    }
     resp
 }
 
@@ -811,14 +954,7 @@ async fn api_key_middleware(
             .fold(0u8, |acc, (a, b)| acc | (a ^ b))
             == 0;
     if !ok {
-        let mut resp = (
-            StatusCode::UNAUTHORIZED,
-            "missing or invalid X-API-Key\n".to_string(),
-        )
-            .into_response();
-        resp.headers_mut()
-            .insert("Content-Type", HeaderValue::from_static("text/plain"));
-        return resp;
+        return error_response(StatusCode::UNAUTHORIZED, "missing or invalid X-API-Key");
     }
     next.run(req).await
 }
@@ -848,18 +984,17 @@ async fn rate_limit_middleware(
                 .map(|s| s.to_string())
         })
         .unwrap_or_else(|| "unknown".to_string());
-    if !rl.check(&key).await {
+    let allowed = rl.check(&key).await;
+    if !allowed.allowed {
         METRICS.rate_limited.fetch_add(1, Ordering::Relaxed);
         METRICS.record_status(StatusCode::TOO_MANY_REQUESTS);
-        let mut resp = (
-            StatusCode::TOO_MANY_REQUESTS,
-            "rate limit exceeded\n".to_string(),
-        )
-            .into_response();
-        resp.headers_mut()
-            .insert("Content-Type", HeaderValue::from_static("text/plain"));
-        resp.headers_mut()
-            .insert("Retry-After", HeaderValue::from_static("10"));
+        let mut resp = error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+        // Real Retry-After: seconds until the oldest entry in the
+        // client's window expires.
+        let retry_after = allowed.retry_after_seconds.max(1);
+        if let Ok(v) = HeaderValue::from_str(&retry_after.to_string()) {
+            resp.headers_mut().insert("Retry-After", v);
+        }
         return resp;
     }
     next.run(req).await
@@ -890,6 +1025,8 @@ struct Metrics {
     latency_buckets_2xx: [AtomicU64; 9],
     latency_sum_us: AtomicU64,
     latency_count: AtomicU64,
+    /// Currently-in-flight (non-stream) requests.
+    in_flight: AtomicU64,
 }
 
 const LATENCY_BUCKETS_S: [f64; 8] = [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0];
@@ -1031,6 +1168,9 @@ async fn metrics_endpoint(
          # HELP cerridwen_cache_ttl_seconds Configured response-cache TTL\n\
          # TYPE cerridwen_cache_ttl_seconds gauge\n\
          cerridwen_cache_ttl_seconds {cache_ttl}\n\
+         # HELP cerridwen_requests_inflight In-flight non-stream requests right now\n\
+         # TYPE cerridwen_requests_inflight gauge\n\
+         cerridwen_requests_inflight {in_flight}\n\
          # HELP cerridwen_request_duration_seconds Latency histogram\n\
          # TYPE cerridwen_request_duration_seconds histogram\n\
          {hist_lines}\
@@ -1042,6 +1182,7 @@ async fn metrics_endpoint(
         hist_lines = histogram_lines(),
         hist_sum = METRICS.latency_sum_us.load(Ordering::Relaxed) as f64 / 1_000_000.0,
         hist_count = METRICS.latency_count.load(Ordering::Relaxed),
+        in_flight = METRICS.in_flight.load(Ordering::Relaxed),
         rl_max = METRICS.rate_limit_max.load(Ordering::Relaxed),
         rl_win = METRICS.rate_limit_window_seconds.load(Ordering::Relaxed),
         cache_ttl = METRICS.cache_ttl_seconds.load(Ordering::Relaxed),
@@ -2242,12 +2383,20 @@ fn not_found(msg: &str) -> Response {
     error_response(StatusCode::NOT_FOUND, msg)
 }
 
+/// Structured JSON error envelope: `{"error": "...", "code": <status>}`.
+/// Clients get a uniform shape they can parse without sniffing the
+/// content-type or splitting strings.
 fn error_response(status: StatusCode, msg: &str) -> Response {
-    let mut resp = (status, msg.to_string()).into_response();
+    let body = json!({
+        "error": msg,
+        "code": status.as_u16(),
+    })
+    .to_string();
+    let mut resp = (status, body).into_response();
     resp.headers_mut()
         .insert("Access-Control-Allow-Origin", HeaderValue::from_static("*"));
     resp.headers_mut()
-        .insert("Content-Type", HeaderValue::from_static("text/plain"));
+        .insert("Content-Type", HeaderValue::from_static("application/json"));
     resp
 }
 

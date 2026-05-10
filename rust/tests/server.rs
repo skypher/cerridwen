@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! End-to-end tests for the cerridwen-server binary, hitting it via HTTP.
 //!
 //! Each test spawns the server on its own port (so they can run in parallel
@@ -335,6 +337,36 @@ fn api_key_gate_when_configured() {
     // Public endpoints unaffected.
     let r4 = s.get("/health");
     assert_eq!(r4.status, 200);
+}
+
+// ---------------- error envelope shape ----------------
+
+#[test]
+fn errors_use_json_envelope() {
+    let s = Server::spawn();
+    let r = s.get("/v1/sun?date=garbage");
+    assert_eq!(r.status, 400);
+    assert!(
+        r.header("content-type")
+            .unwrap_or("")
+            .contains("application/json"),
+        "expected application/json, got {:?}",
+        r.header("content-type")
+    );
+    assert!(r.body.contains("\"error\""));
+    assert!(r.body.contains("\"code\":400") || r.body.contains("\"code\": 400"));
+}
+
+#[test]
+fn rate_limit_429_carries_retry_after() {
+    let s = Server::spawn_with(&["--rate-limit-max", "2", "--rate-limit-window", "10"]);
+    let _ = s.get_with_headers("/v1/sun?n=1", &[("X-Forwarded-For", "10.0.0.50")]);
+    let _ = s.get_with_headers("/v1/sun?n=2", &[("X-Forwarded-For", "10.0.0.50")]);
+    let r = s.get_with_headers("/v1/sun?n=3", &[("X-Forwarded-For", "10.0.0.50")]);
+    assert_eq!(r.status, 429);
+    let retry = r.header("retry-after").unwrap_or("0");
+    let n: u64 = retry.parse().expect("Retry-After should be numeric");
+    assert!(n > 0 && n <= 10, "Retry-After out of range: {retry}");
 }
 
 // ---------------- /health deeper check ----------------

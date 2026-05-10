@@ -7,6 +7,8 @@
 Geocentric Sun/Moon/planet data backed by Swiss Ephemeris.
 A Rust port (and substantial superset) of the original Python `cerridwen`.
 
+![chart wheel screenshot](../docs/screenshots/chart.png)
+
 ## Binaries
 
 | binary                       | feature   | purpose                                                |

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use cerridwen::{
     compute_moon_data_with, compute_sun_data, jd2iso, render_delta_days, MoonOptions, VERSION,
 };

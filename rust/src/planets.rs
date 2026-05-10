@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use std::ffi::CStr;
 
 use libswisseph_sys as raw;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 //! End-to-end tests for the cerridwen-mcp binary. Each test spawns the
 //! binary as a subprocess, pipes JSON-RPC over stdio, and verifies the
 //! protocol-level shape of the responses.

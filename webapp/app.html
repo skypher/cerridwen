@@ -212,9 +212,24 @@
     <div class="controls">
       <label>house
         <select id="chart-house">
-          <option value="P">Placidus</option><option value="K">Koch</option>
-          <option value="W">Whole-sign</option><option value="O">Porphyry</option>
-          <option value="R">Regiomontanus</option><option value="C">Campanus</option>
+          <option value="P">Placidus</option>
+          <option value="K">Koch</option>
+          <option value="W">Whole-sign</option>
+          <option value="O">Porphyry</option>
+          <option value="R">Regiomontanus</option>
+          <option value="C">Campanus</option>
+          <option value="A">Equal (Asc)</option>
+          <option value="E">Equal (alt)</option>
+          <option value="V">Vehlow equal</option>
+          <option value="M">Morinus</option>
+          <option value="T">Topocentric</option>
+          <option value="B">Alcabitius</option>
+          <option value="U">Krusinski-Pisa</option>
+          <option value="Y">APC</option>
+          <option value="N">Equal MC</option>
+          <option value="D">Equal (MC alt)</option>
+          <option value="X">Meridian</option>
+          <option value="H">Horizon</option>
         </select>
       </label>
       <span class="muted">requires latitude + longitude</span>
@@ -1112,7 +1127,14 @@ document.getElementById('stream-start').addEventListener('click', () => {
   if (streamSource) streamSource.close();
   const body = document.getElementById('stream-body').value;
   const interval = document.getElementById('stream-interval').value;
-  const url = `/v1/stream/body/${body}?interval=${interval}`;
+  // Honour the global zodiac context (tropical / sidereal + ayanamsha)
+  // so the stream's positions match what the rest of the app shows.
+  const params = new URLSearchParams({ interval });
+  if (ctx.zodiac() === 'sidereal') {
+    params.set('zodiac', 'sidereal');
+    params.set('ayanamsha', ctx.ayanamsha());
+  }
+  const url = `/v1/stream/body/${body}?${params.toString()}`;
   streamSource = new EventSource(url);
   const status = document.getElementById('stream-status');
   status.textContent = `connecting…`;

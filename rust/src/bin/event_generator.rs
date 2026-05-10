@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use cerridwen::planets::{Body, Jupiter, Mars, Mercury, Moon, Planet, Saturn, Sun, Venus};
 use cerridwen::utils::jd2iso;
 use cerridwen::ASPECTS;

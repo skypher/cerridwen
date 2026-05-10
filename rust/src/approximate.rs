@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT AND AGPL-3.0-only
+
 use crate::defs::{DEBUG_EVENT_APPROXIMATION, MAXIMUM_ERROR, MAX_DATA_POINTS};
 
 /// Recursive sample-and-refine event finder.
