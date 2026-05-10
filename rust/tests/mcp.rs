@@ -33,10 +33,19 @@ fn mcp_bin() -> std::path::PathBuf {
 /// Run a sequence of JSON-RPC requests against the MCP server and return
 /// each response as a parsed Value. Notifications (no id) produce no
 /// response and are filtered out.
+fn ephe_path() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("CERRIDWEN_EPHE_PATH") {
+        return std::path::PathBuf::from(p);
+    }
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("sweph")
+}
+
 fn talk(requests: &[serde_json::Value]) -> Vec<serde_json::Value> {
     let bin = mcp_bin();
     let mut child = Command::new(&bin)
-        .env("CERRIDWEN_EPHE_PATH", "/home/sky/cerridwen/sweph")
+        .env("CERRIDWEN_EPHE_PATH", ephe_path())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

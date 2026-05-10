@@ -55,8 +55,13 @@ impl Server {
         let mut cmd = Command::new(&bin);
         cmd.env(
             "CERRIDWEN_EPHE_PATH",
-            std::env::var("CERRIDWEN_EPHE_PATH")
-                .unwrap_or_else(|_| "/home/sky/cerridwen/sweph".into()),
+            std::env::var("CERRIDWEN_EPHE_PATH").unwrap_or_else(|_| {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join("sweph")
+                    .to_string_lossy()
+                    .into_owned()
+            }),
         )
         .args(["--port", &port.to_string()])
         .args(extra_args)
