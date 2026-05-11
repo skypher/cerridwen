@@ -16,6 +16,7 @@
 //! ```
 
 pub mod approximate;
+pub mod astrology;
 pub mod defs;
 pub mod planets;
 pub mod utils;

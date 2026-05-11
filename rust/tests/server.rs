@@ -401,3 +401,220 @@ fn events_empty_filter_doesnt_silence_results() {
         r.status
     );
 }
+
+// ---------------- new endpoints ----------------
+
+#[test]
+fn declinations_endpoint_returns_grid() {
+    let s = Server::spawn();
+    let r = s.get("/v1/declinations?date=2026-05-09T12:00:00&orb=1.5");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"declinations\""));
+    assert!(r.body.contains("\"parallels\""));
+    assert!(r.body.contains("\"moon_out_of_bounds\""));
+}
+
+#[test]
+fn stations_endpoint_returns_mercury() {
+    let s = Server::spawn();
+    let r = s.get("/v1/stations?body=Mercury&date=2026-01-01T00:00:00&lookahead=400");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"stations\""));
+}
+
+#[test]
+fn stations_endpoint_unknown_body_is_404() {
+    let s = Server::spawn();
+    let r = s.get("/v1/stations?body=Xylophone");
+    assert_eq!(r.status, 404);
+    assert!(r.body.contains("unknown body"));
+}
+
+#[test]
+fn twilight_endpoint_requires_observer() {
+    let s = Server::spawn();
+    let r = s.get("/v1/twilight?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 400);
+}
+
+#[test]
+fn twilight_endpoint_returns_three_layers() {
+    let s = Server::spawn();
+    let r = s.get("/v1/twilight?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"civil\""));
+    assert!(r.body.contains("\"nautical\""));
+    assert!(r.body.contains("\"astronomical\""));
+}
+
+#[test]
+fn planetary_hours_returns_24() {
+    let s = Server::spawn();
+    let r = s.get("/v1/planetary-hours?date=2026-05-11T00:00:00&latitude=52.5&longitude=13.4");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    let hour_count = r.body.matches("\"ruler\":").count();
+    assert_eq!(
+        hour_count,
+        24 + r.body.matches("\"current\":").count().min(1)
+    );
+}
+
+#[test]
+fn arabic_parts_returns_seven_lots() {
+    let s = Server::spawn();
+    let r = s.get("/v1/arabic-parts?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    for n in [
+        "Fortune",
+        "Spirit",
+        "Eros",
+        "Necessity",
+        "Courage",
+        "Victory",
+        "Nemesis",
+    ] {
+        assert!(r.body.contains(n), "{n} missing from parts response");
+    }
+}
+
+#[test]
+fn profections_endpoint_returns_age_one_2nd_house() {
+    // Asc in Aries → age 1 → 2nd house → Taurus → lord Venus.
+    let s = Server::spawn();
+    let r = s.get(
+        "/v1/profections?natal_date=2000-04-01T12:00:00&natal_latitude=10&natal_longitude=10&age=1",
+    );
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"house\":2") || r.body.contains("\"house\": 2"));
+}
+
+#[test]
+fn prenatal_eclipse_endpoint_returns_solar_lunar() {
+    let s = Server::spawn();
+    let r = s.get("/v1/prenatal-eclipse?natal_date=2000-01-01T00:00:00");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"solar\""));
+    assert!(r.body.contains("\"lunar\""));
+}
+
+#[test]
+fn synastry_endpoint_returns_aspect_grid() {
+    let s = Server::spawn();
+    let r = s.get("/v1/synastry?date_a=2000-01-01T12:00:00&date_b=2000-04-01T12:00:00&orb=5");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"aspects\""));
+}
+
+#[test]
+fn composite_midpoint_endpoint() {
+    let s = Server::spawn();
+    let r = s.get("/v1/composite?date_a=2000-01-01T12:00:00&date_b=2000-04-01T12:00:00");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(
+        r.body.contains("\"method\": \"midpoint\"") || r.body.contains("\"method\":\"midpoint\"")
+    );
+    assert!(r.body.contains("\"bodies\""));
+}
+
+#[test]
+fn composite_davison_endpoint_requires_locations() {
+    let s = Server::spawn();
+    let r =
+        s.get("/v1/composite?method=davison&date_a=2000-01-01T12:00:00&date_b=2000-04-01T12:00:00");
+    assert_eq!(r.status, 400);
+}
+
+#[test]
+fn progressions_endpoint_secondary() {
+    let s = Server::spawn();
+    let r = s.get(
+        "/v1/progressions?natal_date=2000-01-01T12:00:00&date=2026-01-01T12:00:00&method=secondary",
+    );
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"progressed_jd\""));
+}
+
+#[test]
+fn progressions_endpoint_solar_arc() {
+    let s = Server::spawn();
+    let r = s.get(
+        "/v1/progressions?natal_date=2000-01-01T12:00:00&date=2026-01-01T12:00:00&method=solar_arc",
+    );
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"arc_deg\""));
+}
+
+#[test]
+fn body_endpoint_now_has_declination_and_center() {
+    let s = Server::spawn();
+    let r = s.get("/v1/body/jupiter?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"declination\""));
+    assert!(r.body.contains("\"right_ascension\""));
+    assert!(
+        r.body.contains("\"center\":\"geocentric\"")
+            || r.body.contains("\"center\": \"geocentric\"")
+    );
+}
+
+#[test]
+fn body_endpoint_helio_toggle() {
+    let s = Server::spawn();
+    let r = s.get("/v1/body/jupiter?date=2026-05-09T12:00:00&center=helio");
+    assert_eq!(r.status, 200);
+    assert!(
+        r.body.contains("\"center\":\"heliocentric\"")
+            || r.body.contains("\"center\": \"heliocentric\"")
+    );
+}
+
+#[test]
+fn body_endpoint_topo_requires_observer() {
+    let s = Server::spawn();
+    let r = s.get("/v1/body/jupiter?date=2026-05-09T12:00:00&center=topo");
+    assert_eq!(r.status, 400);
+}
+
+#[test]
+fn moon_endpoint_now_includes_tithi_and_nakshatra() {
+    let s = Server::spawn();
+    let r = s.get("/v1/moon?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"tithi\""));
+    assert!(r.body.contains("\"nakshatra\""));
+    assert!(r.body.contains("\"out_of_bounds\""));
+}
+
+// ---------------- hardening ----------------
+
+#[test]
+fn cache_key_discriminates_query_params() {
+    // Different query strings must NOT collide in the response cache.
+    let s = Server::spawn();
+    let r1 = s.get("/v1/sun?date=2026-05-09T12:00:00");
+    let r2 = s.get("/v1/sun?date=2026-05-09T18:00:00");
+    assert_eq!(r1.status, 200);
+    assert_eq!(r2.status, 200);
+    assert_ne!(r1.body, r2.body, "cache key must split on query string");
+}
+
+#[test]
+fn metrics_remains_public_when_api_key_set() {
+    // Monitoring endpoints must remain public.
+    let s = Server::spawn_with(&["--api-key", "secret"]);
+    assert_eq!(s.get("/health").status, 200);
+    assert_eq!(s.get("/metrics").status, 200);
+    assert_eq!(s.get("/openapi.json").status, 200);
+    // But /v1/* must reject without key.
+    assert_eq!(s.get("/v1/sun").status, 401);
+}
+
+#[test]
+fn server_timing_header_present() {
+    let s = Server::spawn();
+    let r = s.get("/v1/sun");
+    assert!(
+        r.header("server-timing").is_some(),
+        "missing Server-Timing header"
+    );
+}

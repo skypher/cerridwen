@@ -223,6 +223,97 @@ fn tools_list() -> Value {
                     "tz":         { "type": "string" }
                 }
             })),
+            tool_def("get_declinations", "Declinations of all major bodies plus parallel/contraparallel grid.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" },
+                    "orb":  { "type": "number", "description": "Degrees, default 1" },
+                    "include_nodes": { "type": "boolean" },
+                    "include_asteroids": { "type": "boolean" }
+                }
+            })),
+            tool_def("get_stations", "Upcoming retrograde / direct stations for one body.", json!({
+                "type": "object",
+                "required": ["body"],
+                "properties": {
+                    "body":      { "type": "string" },
+                    "date":      { "type": "string", "description": "Search start; default now" },
+                    "lookahead": { "type": "number", "description": "Days; default 730" },
+                    "limit":     { "type": "integer", "description": "Max results; default 8" },
+                    "tz":        { "type": "string" }
+                }
+            })),
+            tool_def("get_planetary_hours", "Chaldean planetary hours for the day at a given moment+observer.", json!({
+                "type": "object",
+                "required": ["latitude", "longitude"],
+                "properties": {
+                    "date":      { "type": "string" },
+                    "tz":        { "type": "string" },
+                    "latitude":  { "type": "number" },
+                    "longitude": { "type": "number" }
+                }
+            })),
+            tool_def("get_arabic_parts", "Hellenistic lots (Fortune, Spirit, Eros, Necessity, Courage, Victory, Nemesis).", json!({
+                "type": "object",
+                "required": ["latitude", "longitude"],
+                "properties": {
+                    "date":      { "type": "string" },
+                    "tz":        { "type": "string" },
+                    "latitude":  { "type": "number" },
+                    "longitude": { "type": "number" },
+                    "house_system": { "type": "string" }
+                }
+            })),
+            tool_def("get_profections", "Annual profections — house, sign, time-lord for a given age.", json!({
+                "type": "object",
+                "required": ["natal_date", "natal_latitude", "natal_longitude", "age"],
+                "properties": {
+                    "natal_date":      { "type": "string" },
+                    "natal_latitude":  { "type": "number" },
+                    "natal_longitude": { "type": "number" },
+                    "age":             { "type": "integer" },
+                    "tz":              { "type": "string" }
+                }
+            })),
+            tool_def("get_synastry", "Inter-aspect grid between two charts.", json!({
+                "type": "object",
+                "required": ["date_a", "date_b"],
+                "properties": {
+                    "date_a": { "type": "string" },
+                    "date_b": { "type": "string" },
+                    "orb":    { "type": "number", "description": "Default 4" },
+                    "tz":     { "type": "string" }
+                }
+            })),
+            tool_def("get_progressions", "Secondary progressions or solar arc directions to a target date.", json!({
+                "type": "object",
+                "required": ["natal_date"],
+                "properties": {
+                    "natal_date": { "type": "string" },
+                    "date":       { "type": "string", "description": "Target; default now" },
+                    "method":     { "type": "string", "enum": ["secondary", "solar_arc"] },
+                    "tz":         { "type": "string" }
+                }
+            })),
+            tool_def("get_prenatal_eclipse", "Last solar + lunar eclipse before a natal date.", json!({
+                "type": "object",
+                "required": ["natal_date"],
+                "properties": {
+                    "natal_date": { "type": "string" },
+                    "tz":         { "type": "string" }
+                }
+            })),
+            tool_def("get_twilight", "Sunrise, sunset, and civil/nautical/astronomical twilight start/end for a day+observer.", json!({
+                "type": "object",
+                "required": ["latitude", "longitude"],
+                "properties": {
+                    "date":      { "type": "string" },
+                    "tz":        { "type": "string" },
+                    "latitude":  { "type": "number" },
+                    "longitude": { "type": "number" }
+                }
+            })),
         ]
     })
 }
@@ -252,6 +343,15 @@ fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
         "get_events" => tool_get_events(&args)?,
         "get_star" => tool_get_star(&args)?,
         "get_aspects" => tool_get_aspects(&args)?,
+        "get_declinations" => tool_get_declinations(&args)?,
+        "get_stations" => tool_get_stations(&args)?,
+        "get_planetary_hours" => tool_get_planetary_hours(&args)?,
+        "get_arabic_parts" => tool_get_arabic_parts(&args)?,
+        "get_profections" => tool_get_profections(&args)?,
+        "get_synastry" => tool_get_synastry(&args)?,
+        "get_progressions" => tool_get_progressions(&args)?,
+        "get_prenatal_eclipse" => tool_get_prenatal_eclipse(&args)?,
+        "get_twilight" => tool_get_twilight(&args)?,
         other => return Err((-32602, format!("unknown tool: {other}"))),
     };
     // MCP wraps tool output in a `content` array of blocks.
@@ -587,6 +687,277 @@ fn tool_get_events(args: &Value) -> Result<Value, (i64, String)> {
         })
         .collect();
     Ok(Value::Array(arr))
+}
+
+// -----------------------------------------------------------------------------
+// Astrology-tool helpers
+// -----------------------------------------------------------------------------
+
+fn snapshot_longitudes(jd: f64) -> Vec<(String, f64)> {
+    use cerridwen::planets::*;
+    [
+        ("Sun", SE_SUN),
+        ("Moon", SE_MOON),
+        ("Mercury", SE_MERCURY),
+        ("Venus", SE_VENUS),
+        ("Mars", SE_MARS),
+        ("Jupiter", SE_JUPITER),
+        ("Saturn", SE_SATURN),
+        ("Uranus", SE_URANUS),
+        ("Neptune", SE_NEPTUNE),
+        ("Pluto", SE_PLUTO),
+    ]
+    .into_iter()
+    .map(|(n, id)| {
+        let lon = swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN);
+        (n.to_string(), lon)
+    })
+    .collect()
+}
+
+fn tool_get_declinations(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let orb = arg_num(args, "orb").unwrap_or(1.0);
+    use cerridwen::planets::*;
+    let mut bodies: Vec<(String, i32)> = vec![
+        ("Sun".into(), SE_SUN),
+        ("Moon".into(), SE_MOON),
+        ("Mercury".into(), SE_MERCURY),
+        ("Venus".into(), SE_VENUS),
+        ("Mars".into(), SE_MARS),
+        ("Jupiter".into(), SE_JUPITER),
+        ("Saturn".into(), SE_SATURN),
+        ("Uranus".into(), SE_URANUS),
+        ("Neptune".into(), SE_NEPTUNE),
+        ("Pluto".into(), SE_PLUTO),
+    ];
+    if arg_bool(args, "include_nodes").unwrap_or(false) {
+        bodies.push(("Mean Node".into(), SE_MEAN_NODE));
+        bodies.push(("True Node".into(), SE_TRUE_NODE));
+    }
+    if arg_bool(args, "include_asteroids").unwrap_or(false) {
+        for (n, id) in [
+            ("Chiron", SE_CHIRON),
+            ("Ceres", SE_CERES),
+            ("Pallas", SE_PALLAS),
+            ("Juno", SE_JUNO),
+            ("Vesta", SE_VESTA),
+        ] {
+            bodies.push((n.into(), id));
+        }
+    }
+    let decs: Vec<Value> = bodies
+        .iter()
+        .map(|(name, id)| {
+            json!({"body": name, "declination": cerridwen::astrology::declination(*id, jd)})
+        })
+        .collect();
+    let parallels = cerridwen::astrology::declination_aspects(&bodies, jd, orb);
+    let pj: Vec<Value> = parallels
+        .iter()
+        .map(|p| json!({"a": p.a, "b": p.b, "kind": p.kind.label(), "orb": p.orb}))
+        .collect();
+    Ok(json!({
+        "jd": jd, "iso_date": jd2iso(jd),
+        "orb": orb,
+        "declinations": decs,
+        "parallels": pj,
+        "moon_out_of_bounds": cerridwen::astrology::moon_out_of_bounds(jd),
+    }))
+}
+
+fn tool_get_stations(args: &Value) -> Result<Value, (i64, String)> {
+    let name_in = arg_str(args, "body").ok_or((-32602, "missing 'body'".to_string()))?;
+    let canonical =
+        canonical_body_name(name_in).ok_or_else(|| (-32602, format!("unknown body: {name_in}")))?;
+    let planet =
+        body_for(canonical, 0.0).ok_or_else(|| (-32602, format!("unknown body: {name_in}")))?;
+    let start_jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let lookahead = arg_num(args, "lookahead").unwrap_or(730.0);
+    let max = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+    let stations = cerridwen::astrology::upcoming_stations(planet.id, start_jd, lookahead, max);
+    let arr: Vec<Value> = stations
+        .iter()
+        .map(|s| {
+            json!({
+                "jd": s.jd, "iso_date": s.iso_date,
+                "kind": s.kind.label(),
+                "longitude": s.longitude,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "body": canonical,
+        "start_jd": start_jd,
+        "stations": arr,
+    }))
+}
+
+fn tool_get_planetary_hours(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let observer = parse_observer(args)?.ok_or((-32602, "latitude/longitude required".into()))?;
+    let hours = cerridwen::astrology::planetary_hours(jd, &observer);
+    let arr: Vec<Value> = hours
+        .iter()
+        .map(|h| {
+            json!({
+                "index": h.index, "kind": h.kind, "ruler": h.ruler,
+                "start_iso": jd2iso(h.start_jd), "end_iso": jd2iso(h.end_jd),
+            })
+        })
+        .collect();
+    Ok(json!({"jd": jd, "iso_date": jd2iso(jd), "hours": arr}))
+}
+
+fn tool_get_arabic_parts(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let observer = parse_observer(args)?.ok_or((-32602, "latitude/longitude required".into()))?;
+    let system = match arg_str(args, "house_system") {
+        Some(s) => {
+            parse_house_system(s).ok_or_else(|| (-32602, format!("unknown house_system: {s}")))?
+        }
+        None => 'P',
+    };
+    let h = compute_houses(jd, observer.lat, observer.long, system);
+    use cerridwen::planets::*;
+    let lon = |id: i32| -> f64 {
+        swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN)
+    };
+    let sun = lon(SE_SUN);
+    let moon = lon(SE_MOON);
+    let mercury = lon(SE_MERCURY);
+    let venus = lon(SE_VENUS);
+    let mars = lon(SE_MARS);
+    let jupiter = lon(SE_JUPITER);
+    let saturn = lon(SE_SATURN);
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
+    let parts = cerridwen::astrology::arabic_parts(
+        h.ascendant,
+        sun,
+        moon,
+        mercury,
+        venus,
+        mars,
+        jupiter,
+        saturn,
+        is_day,
+    );
+    let arr: Vec<Value> = parts
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name, "longitude": p.longitude, "formula": p.formula,
+            })
+        })
+        .collect();
+    Ok(
+        json!({"jd": jd, "iso_date": jd2iso(jd), "ascendant": h.ascendant, "is_day": is_day, "parts": arr}),
+    )
+}
+
+fn tool_get_profections(args: &Value) -> Result<Value, (i64, String)> {
+    let natal_jd =
+        parse_date_arg(args, "natal_date")?.ok_or((-32602, "missing natal_date".to_string()))?;
+    let lat =
+        arg_num(args, "natal_latitude").ok_or((-32602, "missing natal_latitude".to_string()))?;
+    let long =
+        arg_num(args, "natal_longitude").ok_or((-32602, "missing natal_longitude".to_string()))?;
+    let age = args
+        .get("age")
+        .and_then(|v| v.as_u64())
+        .ok_or((-32602, "missing age".to_string()))? as u32;
+    let h = compute_houses(natal_jd, lat, long, 'P');
+    let p = cerridwen::astrology::profection(h.ascendant, age);
+    Ok(json!({
+        "natal_jd": natal_jd, "natal_ascendant": h.ascendant,
+        "age": p.age, "house": p.house, "sign": p.sign, "lord": p.lord,
+    }))
+}
+
+fn tool_get_synastry(args: &Value) -> Result<Value, (i64, String)> {
+    let jd_a = parse_date_arg(args, "date_a")?.ok_or((-32602, "missing date_a".to_string()))?;
+    let jd_b = parse_date_arg(args, "date_b")?.ok_or((-32602, "missing date_b".to_string()))?;
+    let orb = arg_num(args, "orb").unwrap_or(4.0);
+    let aspects =
+        cerridwen::astrology::synastry(&snapshot_longitudes(jd_a), &snapshot_longitudes(jd_b), orb);
+    let arr: Vec<Value> = aspects
+        .iter()
+        .map(|sa| {
+            json!({
+                "a": sa.a, "b": sa.b, "aspect": sa.aspect,
+                "orb": sa.orb, "angle_a_to_b": sa.angle_a_to_b,
+            })
+        })
+        .collect();
+    Ok(json!({"jd_a": jd_a, "jd_b": jd_b, "orb": orb, "aspects": arr}))
+}
+
+fn tool_get_progressions(args: &Value) -> Result<Value, (i64, String)> {
+    let natal_jd =
+        parse_date_arg(args, "natal_date")?.ok_or((-32602, "missing natal_date".to_string()))?;
+    let target_jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let method = arg_str(args, "method").unwrap_or("secondary");
+    match method {
+        "secondary" => {
+            let pj = cerridwen::astrology::progressed_jd(natal_jd, target_jd);
+            let bodies = snapshot_longitudes(pj);
+            let arr: Vec<Value> = bodies
+                .iter()
+                .map(|(n, l)| json!({"name": n, "longitude": l}))
+                .collect();
+            Ok(
+                json!({"method": "secondary", "progressed_jd": pj, "progressed_iso": jd2iso(pj), "bodies": arr}),
+            )
+        }
+        "solar_arc" => {
+            let arc = cerridwen::astrology::solar_arc_offset(natal_jd, target_jd);
+            let natal = snapshot_longitudes(natal_jd);
+            let arr: Vec<Value> = natal
+                .iter()
+                .map(|(n, l)| {
+                    json!({
+                        "name": n, "longitude": (l + arc).rem_euclid(360.0), "delta_deg": arc,
+                    })
+                })
+                .collect();
+            Ok(json!({"method": "solar_arc", "arc_deg": arc, "bodies": arr}))
+        }
+        other => Err((-32602, format!("unknown method: {other}"))),
+    }
+}
+
+fn tool_get_prenatal_eclipse(args: &Value) -> Result<Value, (i64, String)> {
+    let natal_jd =
+        parse_date_arg(args, "natal_date")?.ok_or((-32602, "missing natal_date".to_string()))?;
+    let solar = cerridwen::astrology::pre_natal_solar_eclipse(natal_jd);
+    let lunar = cerridwen::astrology::pre_natal_lunar_eclipse(natal_jd);
+    let to_json = |e: &cerridwen::Eclipse| -> Value {
+        json!({"jd": e.max_jd, "iso_date": jd2iso(e.max_jd),
+               "kind": format!("{:?}", e.kind), "central": e.central})
+    };
+    Ok(json!({
+        "natal_jd": natal_jd,
+        "solar": solar.as_ref().map(to_json),
+        "lunar": lunar.as_ref().map(to_json),
+    }))
+}
+
+fn tool_get_twilight(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let observer = parse_observer(args)?.ok_or((-32602, "latitude/longitude required".into()))?;
+    let t = cerridwen::astrology::twilight_times(jd, &observer);
+    Ok(json!({
+        "jd": jd, "iso_date": jd2iso(jd),
+        "sunrise": jd2iso(t.sunrise), "sunset": jd2iso(t.sunset),
+        "civil": {"start_iso": jd2iso(t.civil_dawn), "end_iso": jd2iso(t.civil_dusk)},
+        "nautical": {"start_iso": jd2iso(t.nautical_dawn), "end_iso": jd2iso(t.nautical_dusk)},
+        "astronomical": {"start_iso": jd2iso(t.astronomical_dawn), "end_iso": jd2iso(t.astronomical_dusk)},
+    }))
 }
 
 // -----------------------------------------------------------------------------

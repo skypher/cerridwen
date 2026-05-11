@@ -19,6 +19,7 @@ use axum::{
     routing::get,
     Router,
 };
+use cerridwen::astrology;
 use cerridwen::events::{get_events, EventFilter};
 use cerridwen::planets::Planet;
 use cerridwen::{
@@ -193,6 +194,16 @@ async fn main() {
         .route("/v1/return", get(return_endpoint))
         .route("/v1/star/:name", get(star_endpoint))
         .route("/v1/aspects", get(aspects_endpoint))
+        .route("/v1/declinations", get(declinations_endpoint))
+        .route("/v1/stations", get(stations_endpoint))
+        .route("/v1/twilight", get(twilight_endpoint))
+        .route("/v1/planetary-hours", get(planetary_hours_endpoint))
+        .route("/v1/arabic-parts", get(arabic_parts_endpoint))
+        .route("/v1/profections", get(profections_endpoint))
+        .route("/v1/prenatal-eclipse", get(prenatal_eclipse_endpoint))
+        .route("/v1/synastry", get(synastry_endpoint))
+        .route("/v1/composite", get(composite_endpoint))
+        .route("/v1/progressions", get(progressions_endpoint))
         .route("/v1/stream/sun", get(stream_sun_endpoint))
         .route("/v1/stream/moon", get(stream_moon_endpoint))
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
@@ -1536,6 +1547,124 @@ fn openapi_spec() -> Value {
                     "responses": { "200": { "description": "Compact positions" } }
                 }
             },
+            "/v1/declinations": {
+                "get": {
+                    "summary": "Declination grid plus parallel/contraparallel aspects",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_number("orb", "Declination orb in degrees (default 1)", false),
+                        {"name":"include_nodes","in":"query","required":false,
+                         "schema":{"type":"boolean"}},
+                        {"name":"include_asteroids","in":"query","required":false,
+                         "schema":{"type":"boolean"}},
+                    ]),
+                    "responses": { "200": { "description": "Declination grid" } }
+                }
+            },
+            "/v1/stations": {
+                "get": {
+                    "summary": "Upcoming retrograde / direct stations for one body",
+                    "parameters": json!([
+                        p_string("body", "Body name (Mercury, Venus, ...)", true),
+                        p_string("date", "Search start (default now)", false),
+                        p_number("lookahead", "Days forward (default 730)", false),
+                        p_number("limit", "Max results (default 8)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Stations array" } }
+                }
+            },
+            "/v1/twilight": {
+                "get": {
+                    "summary": "Sunrise, sunset, civil/nautical/astronomical twilight",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Twilight schedule" } }
+                }
+            },
+            "/v1/planetary-hours": {
+                "get": {
+                    "summary": "Chaldean planetary hours (24/day) for an observer",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Array of 24 hours" } }
+                }
+            },
+            "/v1/arabic-parts": {
+                "get": {
+                    "summary": "Hellenistic lots (Fortune, Spirit, Eros, Necessity, Courage, Victory, Nemesis)",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                        p_string("house_system", "Asc system (default P)", false),
+                    ]),
+                    "responses": { "200": { "description": "Lots" } }
+                }
+            },
+            "/v1/profections": {
+                "get": {
+                    "summary": "Annual profections (whole-sign rotation) for a natal Asc and age",
+                    "parameters": json!([
+                        p_string("natal_date", "ISO date or JD of natal chart", true),
+                        p_number("natal_latitude", "", true),
+                        p_number("natal_longitude", "", true),
+                        p_number("age", "Years since birth (integer)", true),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Profected house + lord" } }
+                }
+            },
+            "/v1/prenatal-eclipse": {
+                "get": {
+                    "summary": "Last solar + lunar eclipse before a natal moment",
+                    "parameters": json!([
+                        p_string("natal_date", "ISO date or JD", true),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Pre-natal eclipses" } }
+                }
+            },
+            "/v1/synastry": {
+                "get": {
+                    "summary": "Inter-aspect grid between two charts",
+                    "parameters": json!([
+                        p_string("date_a", "ISO date or JD for chart A", true),
+                        p_string("date_b", "ISO date or JD for chart B", true),
+                        p_number("orb", "Degrees (default 4)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Aspect array" } }
+                }
+            },
+            "/v1/composite": {
+                "get": {
+                    "summary": "Composite chart (midpoint or Davison)",
+                    "parameters": json!([
+                        p_string("date_a", "ISO date or JD for chart A", true),
+                        p_string("date_b", "ISO date or JD for chart B", true),
+                        p_string("method", "midpoint (default) or davison", false),
+                        p_number("latitude_a", "Davison only", false),
+                        p_number("longitude_a", "Davison only", false),
+                        p_number("latitude_b", "Davison only", false),
+                        p_number("longitude_b", "Davison only", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Composite chart" } }
+                }
+            },
+            "/v1/progressions": {
+                "get": {
+                    "summary": "Secondary progressions or solar arc directions",
+                    "parameters": json!([
+                        p_string("natal_date", "ISO date or JD of natal chart", true),
+                        p_string("date", "Target date (default now)", false),
+                        p_string("method", "secondary (default) or solar_arc", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Progressed chart" } }
+                }
+            },
         }
     })
 }
@@ -2126,7 +2255,24 @@ async fn body_endpoint(
         Err(e) => return bad_request(&e),
     };
 
-    let trop_lon = planet.longitude_at(jd);
+    let center = match q.get("center") {
+        Some(s) => match astrology::Center::parse(s) {
+            Some(c) => c,
+            None => return bad_request(&format!("unknown center: {s}")),
+        },
+        None => astrology::Center::Geo,
+    };
+    if center == astrology::Center::Topo {
+        match latlong {
+            Some(o) => astrology::set_topo(&o),
+            None => return bad_request("center=topo requires latitude+longitude"),
+        }
+    }
+
+    let trop_lon = match center {
+        astrology::Center::Geo => planet.longitude_at(jd),
+        _ => astrology::longitude_at(center, planet.id, jd),
+    };
     let lon = if ayan != 0.0 {
         apply_ayanamsha(trop_lon, ayan)
     } else {
@@ -2141,10 +2287,13 @@ async fn body_endpoint(
     if ayan != 0.0 {
         o.insert("ayanamsha_degrees".into(), json!(ayan));
     }
+    o.insert("center".into(), json!(center.label()));
     o.insert("name".into(), json!(planet.name()));
     o.insert("position".into(), planet_longitude_to_json(&pos));
     o.insert("longitude".into(), json!(lon));
     o.insert("latitude".into(), json!(planet.latitude(None)));
+    o.insert("declination".into(), json!(planet.declination(None)));
+    o.insert("right_ascension".into(), json!(planet.rectascension(None)));
     o.insert("distance".into(), json!(planet.distance(None)));
     o.insert("speed".into(), json!(planet.speed(None)));
     o.insert("is_rx".into(), json!(planet.is_rx(None)));
@@ -2186,6 +2335,587 @@ async fn body_endpoint(
 
     json_ok(Value::Object(o))
 }
+
+// -- new endpoints ---------------------------------------------------------
+
+fn collect_body_chart(
+    q: &HashMap<String, String>,
+    jd: f64,
+) -> Result<Vec<(String, i32, f64)>, String> {
+    use cerridwen::planets::*;
+    let mut out: Vec<(String, i32, f64)> = vec![
+        ("Sun".into(), SE_SUN, 0.0),
+        ("Moon".into(), SE_MOON, 0.0),
+        ("Mercury".into(), SE_MERCURY, 0.0),
+        ("Venus".into(), SE_VENUS, 0.0),
+        ("Mars".into(), SE_MARS, 0.0),
+        ("Jupiter".into(), SE_JUPITER, 0.0),
+        ("Saturn".into(), SE_SATURN, 0.0),
+        ("Uranus".into(), SE_URANUS, 0.0),
+        ("Neptune".into(), SE_NEPTUNE, 0.0),
+        ("Pluto".into(), SE_PLUTO, 0.0),
+    ];
+    if q.get("include_nodes").map(|s| s == "1").unwrap_or(false) {
+        out.push(("Mean Node".into(), SE_MEAN_NODE, 0.0));
+        out.push(("True Node".into(), SE_TRUE_NODE, 0.0));
+    }
+    if q.get("include_asteroids")
+        .map(|s| s == "1")
+        .unwrap_or(false)
+    {
+        out.push(("Chiron".into(), SE_CHIRON, 0.0));
+        out.push(("Ceres".into(), SE_CERES, 0.0));
+        out.push(("Pallas".into(), SE_PALLAS, 0.0));
+        out.push(("Juno".into(), SE_JUNO, 0.0));
+        out.push(("Vesta".into(), SE_VESTA, 0.0));
+    }
+    for entry in &mut out {
+        let id = entry.1;
+        entry.2 = swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN);
+    }
+    Ok(out)
+}
+
+async fn declinations_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let orb: f64 = match q.get("orb").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("orb must be positive"),
+        Some(Err(_)) => return bad_request("orb must be a number"),
+        None => 1.0,
+    };
+    let chart = match collect_body_chart(&q, jd) {
+        Ok(c) => c,
+        Err(e) => return bad_request(&e),
+    };
+    let bodies: Vec<(String, i32)> = chart.iter().map(|(n, id, _)| (n.clone(), *id)).collect();
+    let decs: Vec<Value> = bodies
+        .iter()
+        .map(|(name, id)| {
+            json!({
+                "body": name,
+                "declination": astrology::declination(*id, jd),
+            })
+        })
+        .collect();
+    let parallels = astrology::declination_aspects(&bodies, jd, orb);
+    let pj: Vec<Value> = parallels
+        .iter()
+        .map(|p| {
+            json!({
+                "a": p.a,
+                "b": p.b,
+                "kind": p.kind.label(),
+                "orb": p.orb,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "orb": orb,
+        "declinations": decs,
+        "parallels": pj,
+        "moon_out_of_bounds": astrology::moon_out_of_bounds(jd),
+    }))
+}
+
+async fn stations_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let body_name = match q.get("body") {
+        Some(s) => s.as_str(),
+        None => return bad_request("required: body=<Sun..Pluto|...>"),
+    };
+    let canonical = match canonical_body_name(body_name) {
+        Some(c) => c,
+        None => return not_found(&format!("unknown body: {body_name}")),
+    };
+    let planet = match body_for(canonical, 0.0) {
+        Some(p) => p,
+        None => return not_found(&format!("unknown body: {body_name}")),
+    };
+    let start_jd = match q.get("date") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let lookahead: f64 = match q.get("lookahead").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("lookahead must be positive"),
+        Some(Err(_)) => return bad_request("lookahead must be a number"),
+        None => 730.0,
+    };
+    let max: usize = match q.get("limit").map(|s| s.parse::<usize>()) {
+        Some(Ok(v)) if v > 0 => v,
+        Some(Ok(_)) => return bad_request("limit must be positive"),
+        Some(Err(_)) => return bad_request("limit must be an integer"),
+        None => 8,
+    };
+    let stations = astrology::upcoming_stations(planet.id, start_jd, lookahead, max);
+    let arr: Vec<Value> = stations
+        .iter()
+        .map(|s| {
+            json!({
+                "jd": s.jd,
+                "iso_date": s.iso_date,
+                "kind": s.kind.label(),
+                "longitude": s.longitude,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(s.longitude)),
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "body": canonical,
+        "start_jd": start_jd,
+        "lookahead_days": lookahead,
+        "stations": arr,
+    }))
+}
+
+async fn twilight_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("required: latitude and longitude"),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let t = astrology::twilight_times(jd, &observer);
+    let pair = |a: f64, b: f64| -> Value {
+        json!({
+            "start_jd": a, "start_iso": jd2iso(a),
+            "end_jd":   b, "end_iso":   jd2iso(b),
+        })
+    };
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "latitude": observer.lat,
+        "longitude": observer.long,
+        "sunrise": jd2iso(t.sunrise),
+        "sunset": jd2iso(t.sunset),
+        "civil": pair(t.civil_dawn, t.civil_dusk),
+        "nautical": pair(t.nautical_dawn, t.nautical_dusk),
+        "astronomical": pair(t.astronomical_dawn, t.astronomical_dusk),
+    }))
+}
+
+async fn planetary_hours_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("required: latitude and longitude"),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let hours = astrology::planetary_hours(jd, &observer);
+    let arr: Vec<Value> = hours
+        .iter()
+        .map(|h| {
+            json!({
+                "index": h.index,
+                "kind": h.kind,
+                "ruler": h.ruler,
+                "start_jd": h.start_jd, "start_iso": jd2iso(h.start_jd),
+                "end_jd": h.end_jd, "end_iso": jd2iso(h.end_jd),
+            })
+        })
+        .collect();
+    let now = jd_now();
+    let current = hours
+        .iter()
+        .find(|h| now >= h.start_jd && now < h.end_jd)
+        .map(|h| {
+            json!({
+                "index": h.index, "kind": h.kind, "ruler": h.ruler,
+                "start_iso": jd2iso(h.start_jd),
+                "end_iso":   jd2iso(h.end_jd),
+            })
+        });
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "current": current,
+        "hours": arr,
+    }))
+}
+
+async fn arabic_parts_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("required: latitude and longitude (for Asc)"),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+
+    let system = match q.get("house_system") {
+        Some(s) => match parse_house_system(s) {
+            Some(c) => c,
+            None => return bad_request(&format!("unknown house_system: {s}")),
+        },
+        None => 'P',
+    };
+    let h = compute_houses(jd, observer.lat, observer.long, system);
+    use cerridwen::planets::*;
+    let lon = |id: i32| -> f64 {
+        swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN)
+    };
+    let sun = lon(SE_SUN);
+    let moon = lon(SE_MOON);
+    let mercury = lon(SE_MERCURY);
+    let venus = lon(SE_VENUS);
+    let mars = lon(SE_MARS);
+    let jupiter = lon(SE_JUPITER);
+    let saturn = lon(SE_SATURN);
+
+    // Day chart if Sun above the horizon (between the 7th and 1st cusp,
+    // i.e. from MC side going up through Asc).
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let sun_arc = (sun - h.ascendant).rem_euclid(360.0);
+    let dsc_arc = (dsc - h.ascendant).rem_euclid(360.0);
+    let is_day = sun_arc >= dsc_arc; // sun in houses 7..12 means above horizon
+    let parts = astrology::arabic_parts(
+        h.ascendant,
+        sun,
+        moon,
+        mercury,
+        venus,
+        mars,
+        jupiter,
+        saturn,
+        is_day,
+    );
+    let arr: Vec<Value> = parts
+        .iter()
+        .map(|p| {
+            json!({
+                "name": p.name,
+                "longitude": p.longitude,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(p.longitude)),
+                "formula": p.formula,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "ascendant": h.ascendant,
+        "is_day": is_day,
+        "parts": arr,
+    }))
+}
+
+async fn profections_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let natal_date = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let lat = match q.get("natal_latitude").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) => v,
+        _ => return bad_request("required: natal_latitude"),
+    };
+    let long = match q.get("natal_longitude").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) => v,
+        _ => return bad_request("required: natal_longitude"),
+    };
+    let age: u32 = match q.get("age").map(|s| s.parse::<u32>()) {
+        Some(Ok(v)) => v,
+        Some(Err(_)) => return bad_request("age must be a non-negative integer"),
+        None => return bad_request("required: age"),
+    };
+    let h = compute_houses(natal_date, lat, long, 'P');
+    let p = astrology::profection(h.ascendant, age);
+    json_ok(json!({
+        "natal_jd": natal_date,
+        "natal_ascendant": h.ascendant,
+        "age": p.age,
+        "house": p.house,
+        "sign": p.sign,
+        "lord": p.lord,
+    }))
+}
+
+async fn prenatal_eclipse_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let natal_jd = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let solar = astrology::pre_natal_solar_eclipse(natal_jd);
+    let lunar = astrology::pre_natal_lunar_eclipse(natal_jd);
+    let to_json = |e: &Eclipse| -> Value {
+        json!({
+            "jd": e.max_jd,
+            "iso_date": jd2iso(e.max_jd),
+            "kind": format!("{:?}", e.kind),
+            "central": e.central,
+        })
+    };
+    json_ok(json!({
+        "natal_jd": natal_jd,
+        "solar": solar.as_ref().map(to_json),
+        "lunar": lunar.as_ref().map(to_json),
+    }))
+}
+
+fn parse_chart_param(
+    q: &HashMap<String, String>,
+    suffix: &str,
+) -> Result<(f64, Option<LatLong>), String> {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let jd_key = format!("date_{suffix}");
+    let date_str = q
+        .get(&jd_key)
+        .ok_or_else(|| format!("required: date_{suffix}"))?;
+    let jd = parse_jd_or_iso_date_in_tz(date_str, tz)?;
+    let lat_key = format!("latitude_{suffix}");
+    let long_key = format!("longitude_{suffix}");
+    let lat = q
+        .get(&lat_key)
+        .map(|s| s.parse::<f64>())
+        .transpose()
+        .map_err(|e| format!("invalid {lat_key}: {e}"))?;
+    let long = q
+        .get(&long_key)
+        .map(|s| s.parse::<f64>())
+        .transpose()
+        .map_err(|e| format!("invalid {long_key}: {e}"))?;
+    let latlong = match (lat, long) {
+        (Some(la), Some(lo)) => Some(LatLong::new(la, lo).map_err(|s| s.to_string())?),
+        (None, None) => None,
+        _ => return Err(format!("Specify both {lat_key} and {long_key} or none")),
+    };
+    Ok((jd, latlong))
+}
+
+fn snapshot_longitudes(jd: f64) -> Vec<(String, f64)> {
+    use cerridwen::planets::*;
+    [
+        ("Sun", SE_SUN),
+        ("Moon", SE_MOON),
+        ("Mercury", SE_MERCURY),
+        ("Venus", SE_VENUS),
+        ("Mars", SE_MARS),
+        ("Jupiter", SE_JUPITER),
+        ("Saturn", SE_SATURN),
+        ("Uranus", SE_URANUS),
+        ("Neptune", SE_NEPTUNE),
+        ("Pluto", SE_PLUTO),
+    ]
+    .into_iter()
+    .map(|(n, id)| {
+        let lon = swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN);
+        (n.to_string(), lon)
+    })
+    .collect()
+}
+
+async fn synastry_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_a, _) = match parse_chart_param(&q, "a") {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let (jd_b, _) = match parse_chart_param(&q, "b") {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let orb: f64 = match q.get("orb").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("orb must be positive"),
+        Some(Err(_)) => return bad_request("orb must be a number"),
+        None => 4.0,
+    };
+    let a = snapshot_longitudes(jd_a);
+    let b = snapshot_longitudes(jd_b);
+    let aspects = astrology::synastry(&a, &b, orb);
+    let arr: Vec<Value> = aspects
+        .iter()
+        .map(|sa| {
+            json!({
+                "a": sa.a, "b": sa.b,
+                "aspect": sa.aspect,
+                "orb": sa.orb,
+                "angle_a_to_b": sa.angle_a_to_b,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "chart_a": { "jd": jd_a, "iso_date": jd2iso(jd_a) },
+        "chart_b": { "jd": jd_b, "iso_date": jd2iso(jd_b) },
+        "orb": orb,
+        "aspects": arr,
+    }))
+}
+
+async fn composite_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_a, loc_a) = match parse_chart_param(&q, "a") {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let (jd_b, loc_b) = match parse_chart_param(&q, "b") {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let mode = q
+        .get("method")
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_else(|| "midpoint".into());
+    let a = snapshot_longitudes(jd_a);
+    let b = snapshot_longitudes(jd_b);
+    if mode == "davison" {
+        let loc_a = match loc_a {
+            Some(l) => l,
+            None => return bad_request("davison composite needs latitude_a + longitude_a"),
+        };
+        let loc_b = match loc_b {
+            Some(l) => l,
+            None => return bad_request("davison composite needs latitude_b + longitude_b"),
+        };
+        let d = astrology::davison_chart(jd_a, jd_b, &loc_a, &loc_b);
+        let chart = snapshot_longitudes(d.jd);
+        let bodies: Vec<Value> = chart
+            .iter()
+            .map(|(n, lon)| {
+                json!({
+                    "name": n,
+                    "longitude": lon,
+                    "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                })
+            })
+            .collect();
+        json_ok(json!({
+            "method": "davison",
+            "midpoint_jd": d.jd,
+            "midpoint_iso": d.iso_date,
+            "midpoint_latitude": d.latitude,
+            "midpoint_longitude": d.longitude,
+            "bodies": bodies,
+        }))
+    } else {
+        let composite = astrology::midpoint_composite(&a, &b);
+        let bodies: Vec<Value> = composite
+            .iter()
+            .map(|(n, lon)| {
+                json!({
+                    "name": n,
+                    "longitude": lon,
+                    "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                })
+            })
+            .collect();
+        json_ok(json!({
+            "method": "midpoint",
+            "chart_a_iso": jd2iso(jd_a),
+            "chart_b_iso": jd2iso(jd_b),
+            "bodies": bodies,
+        }))
+    }
+}
+
+async fn progressions_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let natal_jd = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let target_jd = match q.get("date") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let method = q
+        .get("method")
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_else(|| "secondary".into());
+    let natal = snapshot_longitudes(natal_jd);
+    let body = match method.as_str() {
+        "secondary" => {
+            let pj = astrology::progressed_jd(natal_jd, target_jd);
+            let prog = snapshot_longitudes(pj);
+            let bodies: Vec<Value> = prog
+                .iter()
+                .map(|(n, lon)| {
+                    json!({
+                        "name": n,
+                        "longitude": lon,
+                        "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                    })
+                })
+                .collect();
+            json!({
+                "method": "secondary",
+                "progressed_jd": pj,
+                "progressed_iso": jd2iso(pj),
+                "bodies": bodies,
+            })
+        }
+        "solar_arc" => {
+            let arc = astrology::solar_arc_offset(natal_jd, target_jd);
+            let bodies: Vec<Value> = natal
+                .iter()
+                .map(|(n, lon)| {
+                    let new = (lon + arc).rem_euclid(360.0);
+                    json!({
+                        "name": n,
+                        "longitude": new,
+                        "position": planet_longitude_to_json(&PlanetLongitude::new(new)),
+                        "delta_deg": arc,
+                    })
+                })
+                .collect();
+            json!({
+                "method": "solar_arc",
+                "arc_deg": arc,
+                "bodies": bodies,
+            })
+        }
+        other => return bad_request(&format!("unknown method: {other}. Try secondary|solar_arc")),
+    };
+    let mut wrap = serde_json::Map::new();
+    wrap.insert("natal_jd".into(), json!(natal_jd));
+    wrap.insert("natal_iso".into(), json!(jd2iso(natal_jd)));
+    wrap.insert("target_jd".into(), json!(target_jd));
+    wrap.insert("target_iso".into(), json!(jd2iso(target_jd)));
+    if let Value::Object(m) = body {
+        for (k, v) in m {
+            wrap.insert(k, v);
+        }
+    }
+    json_ok(Value::Object(wrap))
+}
+
+// -- end new endpoints -----------------------------------------------------
 
 fn canonical_body_name(s: &str) -> Option<&'static str> {
     // Accept synonyms — "rahu"/"north_node" → mean node, "ketu"/"south_node"
@@ -2499,6 +3229,37 @@ fn moon_data_to_json(d: &MoonData, ayan: f64, ayan_name: &str) -> Value {
         json!(d.relative_orbital_velocity),
     );
     o.insert("lunation_number".into(), json!(d.lunation_number));
+    {
+        let t = astrology::tithi(d.jd);
+        o.insert(
+            "tithi".into(),
+            json!({
+                "number": t.number,
+                "name": t.name,
+                "half": t.half,
+                "paksha_index": t.paksha_index,
+                "elongation_deg": t.elongation_deg,
+                "fraction_complete": t.fraction_complete,
+            }),
+        );
+        // Nakshatra wants sidereal Moon longitude (Lahiri convention).
+        let lahiri = compute_ayanamsha(d.jd, 1);
+        let sid = apply_ayanamsha(d.position.absolute_degrees, lahiri);
+        let n = astrology::nakshatra_sidereal(sid);
+        o.insert(
+            "nakshatra".into(),
+            json!({
+                "number": n.number,
+                "name": n.name,
+                "pada": n.pada,
+                "lon_in_mansion": n.lon_in_mansion,
+            }),
+        );
+    }
+    o.insert(
+        "out_of_bounds".into(),
+        json!(astrology::moon_out_of_bounds(d.jd)),
+    );
     o.insert(
         "void_of_course".into(),
         void_of_course_to_json(&d.void_of_course),

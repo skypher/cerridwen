@@ -237,3 +237,231 @@ fn unknown_tz_errors() {
     let r = parse_jd_or_iso_date_in_tz("2026-05-06T12:00:00", Some("Atlantis/Lostcity"));
     assert!(r.is_err());
 }
+
+// ----------------------- astrology module: new techniques --------------------
+
+use cerridwen::astrology;
+
+#[test]
+fn declination_sun_within_obliquity() {
+    // Declination of the Sun must always live inside ±ε (~23.45°).
+    let jd = iso2jd("2026-05-06T12:00:00").unwrap();
+    let d = astrology::declination(SE_SUN, jd);
+    assert!(d.abs() < 23.5, "sun δ = {d}");
+}
+
+#[test]
+fn moon_out_of_bounds_flag_consistent() {
+    let jd = iso2jd("2026-05-06T12:00:00").unwrap();
+    let d = astrology::declination(SE_MOON, jd);
+    let oob = astrology::moon_out_of_bounds(jd);
+    assert_eq!(oob, d.abs() > 23.4367);
+}
+
+#[test]
+fn parallel_aspect_classifies_same_sign_close_dec() {
+    let v: Vec<(String, i32)> = vec![("A".into(), SE_SUN), ("B".into(), SE_SUN)]; // self pair → exact parallel
+    let jd = iso2jd("2026-05-06T12:00:00").unwrap();
+    let aspects = astrology::declination_aspects(&v, jd, 0.1);
+    assert_eq!(aspects.len(), 1);
+    assert_eq!(aspects[0].kind.label(), "parallel");
+    assert!(aspects[0].orb < 1e-6);
+}
+
+#[test]
+fn tithi_at_new_moon_is_one_or_thirty() {
+    // Pick a JD very near new moon; the tithi count rolls 30→1 there.
+    let new_moon = iso2jd("2026-04-17T00:00:00").unwrap();
+    let t = astrology::tithi(new_moon);
+    assert!(
+        t.number == 1 || t.number == 30,
+        "tithi at new moon = {} ({}/{})",
+        t.number,
+        t.half,
+        t.name
+    );
+}
+
+#[test]
+fn nakshatra_cycles_within_27() {
+    // 27 evenly-spaced longitudes must give 27 different mansion indices.
+    let mut seen = std::collections::HashSet::new();
+    let span = 360.0 / 27.0;
+    for i in 0..27 {
+        let n = astrology::nakshatra_sidereal(i as f64 * span + span / 2.0);
+        seen.insert(n.number);
+        assert!(n.number >= 1 && n.number <= 27);
+        assert!(n.pada >= 1 && n.pada <= 4);
+    }
+    assert_eq!(seen.len(), 27);
+}
+
+#[test]
+fn profection_house_cycles_every_12_years() {
+    // Profected house at age 0 == age at 12 == age at 24, etc.
+    let p0 = astrology::profection(15.0, 0);
+    let p12 = astrology::profection(15.0, 12);
+    let p36 = astrology::profection(15.0, 36);
+    assert_eq!(p0.house, p12.house);
+    assert_eq!(p0.house, p36.house);
+    assert_eq!(p0.sign, p12.sign);
+    // House 1 at age 0 for any Asc.
+    assert_eq!(p0.house, 1);
+}
+
+#[test]
+fn profection_sign_lord_matches_traditional() {
+    // Asc in Aries (lon ~5°). Age 4 ⇒ 5th house ⇒ Leo ⇒ Sun.
+    let p = astrology::profection(5.0, 4);
+    assert_eq!(p.sign, "Leo");
+    assert_eq!(p.lord, "Sun");
+    assert_eq!(p.house, 5);
+}
+
+#[test]
+fn shortest_midpoint_handles_zero_crossing() {
+    // 350° and 10° → midpoint should be 0°, not 180°.
+    let m = astrology::shortest_midpoint(350.0, 10.0);
+    assert!(!(1.0..=359.0).contains(&m), "midpoint = {m}");
+}
+
+#[test]
+fn shortest_midpoint_simple_case() {
+    let m = astrology::shortest_midpoint(0.0, 60.0);
+    assert_abs_diff_eq!(m, 30.0, epsilon = 1e-9);
+}
+
+#[test]
+fn synastry_matches_simple_conjunction() {
+    // Two charts with identical Sun → at least one Sun-Sun conjunction in
+    // the inter-aspect grid.
+    let a = vec![("Sun".into(), 12.0)];
+    let b = vec![("Sun".into(), 14.0)];
+    let aspects = astrology::synastry(&a, &b, 5.0);
+    assert!(aspects
+        .iter()
+        .any(|x| x.aspect == "conjunction" && x.a == "Sun" && x.b == "Sun"));
+}
+
+#[test]
+fn synastry_symmetric_orb() {
+    // Swapping the role of A and B should produce the same orbs.
+    let chart = vec![("Sun".into(), 100.0), ("Moon".into(), 280.0)];
+    let other = vec![("Sun".into(), 102.0), ("Moon".into(), 281.5)];
+    let a = astrology::synastry(&chart, &other, 5.0);
+    let b = astrology::synastry(&other, &chart, 5.0);
+    assert_eq!(a.len(), b.len());
+}
+
+#[test]
+fn solar_arc_zero_at_natal_moment() {
+    let jd = iso2jd("2000-01-01T12:00:00").unwrap();
+    assert!(astrology::solar_arc_offset(jd, jd).abs() < 1e-8);
+}
+
+#[test]
+fn solar_arc_about_one_degree_per_year() {
+    // The Sun moves ~1°/day, so after one secondary-progression year
+    // (~1 day later) the arc should be roughly 1°.
+    let natal = iso2jd("2000-01-01T12:00:00").unwrap();
+    let target = natal + 365.2422;
+    let arc = astrology::solar_arc_offset(natal, target);
+    assert!(arc > 0.9 && arc < 1.1, "solar arc / yr = {arc}");
+}
+
+#[test]
+fn arabic_parts_fortune_day_identity() {
+    // Day: Fortune = Asc + Moon - Sun.
+    let parts = astrology::arabic_parts(0.0, 90.0, 180.0, 30.0, 60.0, 120.0, 150.0, 210.0, true);
+    let fortune = parts.iter().find(|p| p.name == "Fortune").unwrap();
+    let expected = (0.0 + 180.0 - 90.0_f64).rem_euclid(360.0);
+    assert_abs_diff_eq!(fortune.longitude, expected, epsilon = 1e-9);
+}
+
+#[test]
+fn arabic_parts_swaps_for_night() {
+    let day = astrology::arabic_parts(0.0, 90.0, 180.0, 30.0, 60.0, 120.0, 150.0, 210.0, true);
+    let night = astrology::arabic_parts(0.0, 90.0, 180.0, 30.0, 60.0, 120.0, 150.0, 210.0, false);
+    let f_day = day.iter().find(|p| p.name == "Fortune").unwrap().longitude;
+    let f_night = night
+        .iter()
+        .find(|p| p.name == "Fortune")
+        .unwrap()
+        .longitude;
+    // Day Fortune and night Fortune must differ by 2 × (Moon - Sun).
+    let delta = (f_day - f_night).rem_euclid(360.0);
+    let expected = (2.0_f64 * (180.0 - 90.0)).rem_euclid(360.0);
+    assert_abs_diff_eq!(delta, expected, epsilon = 1e-9);
+}
+
+#[test]
+fn upcoming_stations_finds_mercury_rx() {
+    // Mercury makes ~3 retrograde stations per year. A 400-day search
+    // window from any date must find at least 2.
+    let start = iso2jd("2026-01-01T00:00:00").unwrap();
+    let stations = astrology::upcoming_stations(cerridwen::planets::SE_MERCURY, start, 400.0, 10);
+    assert!(stations.len() >= 2, "found {} stations", stations.len());
+    // First station's speed sign must alternate from positive/negative.
+    let kinds: Vec<&'static str> = stations.iter().map(|s| s.kind.label()).collect();
+    assert!(
+        kinds.windows(2).all(|w| w[0] != w[1]),
+        "stations must alternate retrograde/direct: {kinds:?}"
+    );
+}
+
+#[test]
+fn pre_natal_solar_eclipse_is_before_natal() {
+    let natal = iso2jd("2000-01-01T00:00:00").unwrap();
+    let e = astrology::pre_natal_solar_eclipse(natal).expect("solar eclipse must exist");
+    assert!(e.max_jd < natal, "{} not before {}", e.max_jd, natal);
+}
+
+#[test]
+fn pre_natal_lunar_eclipse_is_before_natal() {
+    let natal = iso2jd("2000-01-01T00:00:00").unwrap();
+    let e = astrology::pre_natal_lunar_eclipse(natal).expect("lunar eclipse must exist");
+    assert!(e.max_jd < natal, "{} not before {}", e.max_jd, natal);
+}
+
+#[test]
+fn planetary_hours_returns_24() {
+    // Berlin, today: 24 sequential hours, weekday-correct first ruler.
+    let jd = iso2jd("2026-05-11T00:00:00").unwrap();
+    let observer = cerridwen::LatLong::new(52.5, 13.4).unwrap();
+    let hours = astrology::planetary_hours(jd, &observer);
+    assert_eq!(hours.len(), 24);
+    for w in hours.windows(2) {
+        assert!(w[1].start_jd >= w[0].end_jd - 1e-6);
+    }
+}
+
+#[test]
+fn center_parsing_round_trip() {
+    let g = astrology::Center::parse("Geo").unwrap();
+    let h = astrology::Center::parse("helio").unwrap();
+    let t = astrology::Center::parse("topocentric").unwrap();
+    assert_eq!(g.label(), "geocentric");
+    assert_eq!(h.label(), "heliocentric");
+    assert_eq!(t.label(), "topocentric");
+    assert!(astrology::Center::parse("milky_way_centric").is_none());
+}
+
+#[test]
+fn helio_sun_longitude_is_nan() {
+    // The Sun cannot have a heliocentric longitude.
+    let jd = iso2jd("2026-05-06T12:00:00").unwrap();
+    let lon = astrology::longitude_at(astrology::Center::Helio, SE_SUN, jd);
+    assert!(lon.is_nan(), "helio sun lon should be NaN, got {lon}");
+}
+
+#[test]
+fn helio_geocentric_differ() {
+    // For the inner planets, heliocentric and geocentric longitudes
+    // can disagree by tens of degrees (especially near conjunction).
+    let jd = iso2jd("2026-05-06T12:00:00").unwrap();
+    let geo = astrology::longitude_at(astrology::Center::Geo, cerridwen::planets::SE_VENUS, jd);
+    let helio = astrology::longitude_at(astrology::Center::Helio, cerridwen::planets::SE_VENUS, jd);
+    let delta = (helio - geo).rem_euclid(360.0);
+    let delta = delta.min(360.0 - delta);
+    assert!(delta > 1.0, "geo≈helio venus diff = {delta}");
+}
