@@ -22,6 +22,18 @@ For the machine-readable schema, hit that URL or browse `/docs`.
 | `GET /v1/transits`        | Active transits to a natal chart                |
 | `GET /v1/return`          | Next solar/lunar/planetary return               |
 | `GET /v1/eclipses`        | Solar/lunar eclipses in a date range            |
+| `GET /v1/midpoints`       | Pairwise midpoints plus harmonic hits           |
+| `GET /v1/antiscia`        | Antiscia / contra-antiscia positions and hits   |
+| `GET /v1/decans`          | Decan assignments by several traditional systems |
+| `GET /v1/terms`           | Ptolemaic or Egyptian bound ruler per body      |
+| `GET /v1/triplicity`      | Dorothean triplicity rulers per body            |
+| `GET /v1/receptions`      | Mutual receptions by traditional rulership      |
+| `GET /v1/equation-of-time` | Apparent solar time minus mean solar time      |
+| `GET /v1/ingresses`       | Upcoming cardinal-sign ingresses                |
+| `GET /v1/lunations`       | New/quarter/full/last-quarter Moons in a window |
+| `GET /v1/heliacal/{star}` | Next heliacal rising for a star and observer    |
+| `GET /v1/zodiacal-releasing` | Zodiacal Releasing L1 periods from Spirit    |
+| `GET /v1/natal-chart`     | Houses, bodies-with-houses, aspects, and lots   |
 | `GET /v1/events`          | DB-backed event log                             |
 | `GET /v1/events.ics`      | Same, as an iCalendar feed                      |
 
@@ -69,6 +81,11 @@ All SSE endpoints emit `id:` lines so clients reconnect with
 | `orb=…`                | Aspect orb in degrees                    |
 | `include=…`            | `/v1/aspects` and `/v1/transits`: comma-separated subset of `nodes,asteroids,chiron,lilith` |
 | `include_angles=1`     | Same: include Asc/MC                     |
+| `system=ptolemaic|egyptian` | `/v1/terms` bound table selector     |
+| `count=…`              | `/v1/ingresses` and `/v1/zodiacal-releasing` result count |
+| `lookahead=…`          | Days forward for eclipse/lunation/event windows |
+| `date_start=…&date_end=…` | Window bounds where supported         |
+| `natal_date=…&natal_latitude=…&natal_longitude=…` | Natal inputs for chart-derived techniques |
 
 ## Rate limits & caching
 

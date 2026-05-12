@@ -458,8 +458,9 @@ fn helio_sun_longitude_is_nan() {
 
 #[test]
 fn midpoint_pair_count_matches_choose_2() {
-    let chart: Vec<(String, f64)> =
-        (0..10).map(|i| (format!("B{i}"), i as f64 * 30.0)).collect();
+    let chart: Vec<(String, f64)> = (0..10)
+        .map(|i| (format!("B{i}"), i as f64 * 30.0))
+        .collect();
     let mps = astrology::midpoints(&chart);
     assert_eq!(mps.len(), 10 * 9 / 2);
 }
@@ -531,7 +532,7 @@ fn receptions_finds_mutual() {
     // Sun in Aries (sign ruled by Mars), Mars in Leo (sign ruled by Sun)
     // → mutual reception.
     let chart = vec![
-        ("Sun".to_string(), 10.0),  // Aries
+        ("Sun".to_string(), 10.0),   // Aries
         ("Mars".to_string(), 130.0), // Leo
     ];
     let r = astrology::receptions(&chart);

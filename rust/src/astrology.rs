@@ -1035,33 +1035,33 @@ fn decan_in_sign(lon: f64) -> u8 {
 }
 
 const TRIPLICITY_DECAN_RULERS: [[&str; 3]; 12] = [
-    ["Mars", "Sun", "Jupiter"],          // Aries (fire)
-    ["Venus", "Mercury", "Saturn"],      // Taurus (earth)
-    ["Mercury", "Venus", "Saturn"],      // Gemini (air, day=Saturn?)
-    ["Moon", "Mars", "Jupiter"],         // Cancer (water)
-    ["Sun", "Jupiter", "Mars"],          // Leo
-    ["Mercury", "Saturn", "Venus"],      // Virgo
-    ["Venus", "Saturn", "Mercury"],      // Libra
-    ["Mars", "Jupiter", "Moon"],         // Scorpio
-    ["Jupiter", "Mars", "Sun"],          // Sagittarius
-    ["Saturn", "Venus", "Mercury"],      // Capricorn
-    ["Saturn", "Mercury", "Venus"],      // Aquarius
-    ["Jupiter", "Moon", "Mars"],         // Pisces
+    ["Mars", "Sun", "Jupiter"],     // Aries (fire)
+    ["Venus", "Mercury", "Saturn"], // Taurus (earth)
+    ["Mercury", "Venus", "Saturn"], // Gemini (air, day=Saturn?)
+    ["Moon", "Mars", "Jupiter"],    // Cancer (water)
+    ["Sun", "Jupiter", "Mars"],     // Leo
+    ["Mercury", "Saturn", "Venus"], // Virgo
+    ["Venus", "Saturn", "Mercury"], // Libra
+    ["Mars", "Jupiter", "Moon"],    // Scorpio
+    ["Jupiter", "Mars", "Sun"],     // Sagittarius
+    ["Saturn", "Venus", "Mercury"], // Capricorn
+    ["Saturn", "Mercury", "Venus"], // Aquarius
+    ["Jupiter", "Moon", "Mars"],    // Pisces
 ];
 
 const CHALDEAN_DECAN_RULERS: [[&str; 3]; 12] = [
-    ["Mars", "Sun", "Venus"],            // Aries
-    ["Mercury", "Moon", "Saturn"],       // Taurus
-    ["Jupiter", "Mars", "Sun"],          // Gemini
-    ["Venus", "Mercury", "Moon"],        // Cancer
-    ["Saturn", "Jupiter", "Mars"],       // Leo
-    ["Sun", "Venus", "Mercury"],         // Virgo
-    ["Moon", "Saturn", "Jupiter"],       // Libra
-    ["Mars", "Sun", "Venus"],            // Scorpio
-    ["Mercury", "Moon", "Saturn"],       // Sagittarius
-    ["Jupiter", "Mars", "Sun"],          // Capricorn
-    ["Venus", "Mercury", "Moon"],        // Aquarius
-    ["Saturn", "Jupiter", "Mars"],       // Pisces
+    ["Mars", "Sun", "Venus"],      // Aries
+    ["Mercury", "Moon", "Saturn"], // Taurus
+    ["Jupiter", "Mars", "Sun"],    // Gemini
+    ["Venus", "Mercury", "Moon"],  // Cancer
+    ["Saturn", "Jupiter", "Mars"], // Leo
+    ["Sun", "Venus", "Mercury"],   // Virgo
+    ["Moon", "Saturn", "Jupiter"], // Libra
+    ["Mars", "Sun", "Venus"],      // Scorpio
+    ["Mercury", "Moon", "Saturn"], // Sagittarius
+    ["Jupiter", "Mars", "Sun"],    // Capricorn
+    ["Venus", "Mercury", "Moon"],  // Aquarius
+    ["Saturn", "Jupiter", "Mars"], // Pisces
 ];
 
 #[derive(Clone, Debug)]
@@ -1093,45 +1093,189 @@ type TermRow = [(f64, &'static str); 5];
 // Ptolemaic terms (from Tetrabiblos I.21). Cumulative end-degree.
 const PTOLEMAIC_TERMS: [TermRow; 12] = [
     // Aries
-    [(6.0, "Jupiter"), (14.0, "Venus"), (21.0, "Mercury"), (26.0, "Mars"), (30.0, "Saturn")],
+    [
+        (6.0, "Jupiter"),
+        (14.0, "Venus"),
+        (21.0, "Mercury"),
+        (26.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
     // Taurus
-    [(8.0, "Venus"), (15.0, "Mercury"), (22.0, "Jupiter"), (26.0, "Saturn"), (30.0, "Mars")],
+    [
+        (8.0, "Venus"),
+        (15.0, "Mercury"),
+        (22.0, "Jupiter"),
+        (26.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
     // Gemini
-    [(7.0, "Mercury"), (14.0, "Jupiter"), (21.0, "Venus"), (25.0, "Saturn"), (30.0, "Mars")],
+    [
+        (7.0, "Mercury"),
+        (14.0, "Jupiter"),
+        (21.0, "Venus"),
+        (25.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
     // Cancer
-    [(6.0, "Mars"), (13.0, "Jupiter"), (20.0, "Mercury"), (27.0, "Venus"), (30.0, "Saturn")],
+    [
+        (6.0, "Mars"),
+        (13.0, "Jupiter"),
+        (20.0, "Mercury"),
+        (27.0, "Venus"),
+        (30.0, "Saturn"),
+    ],
     // Leo
-    [(6.0, "Saturn"), (13.0, "Mercury"), (19.0, "Venus"), (25.0, "Jupiter"), (30.0, "Mars")],
+    [
+        (6.0, "Saturn"),
+        (13.0, "Mercury"),
+        (19.0, "Venus"),
+        (25.0, "Jupiter"),
+        (30.0, "Mars"),
+    ],
     // Virgo
-    [(7.0, "Mercury"), (13.0, "Venus"), (18.0, "Jupiter"), (24.0, "Saturn"), (30.0, "Mars")],
+    [
+        (7.0, "Mercury"),
+        (13.0, "Venus"),
+        (18.0, "Jupiter"),
+        (24.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
     // Libra
-    [(6.0, "Saturn"), (14.0, "Mercury"), (21.0, "Jupiter"), (28.0, "Venus"), (30.0, "Mars")],
+    [
+        (6.0, "Saturn"),
+        (14.0, "Mercury"),
+        (21.0, "Jupiter"),
+        (28.0, "Venus"),
+        (30.0, "Mars"),
+    ],
     // Scorpio
-    [(6.0, "Mars"), (14.0, "Jupiter"), (21.0, "Venus"), (27.0, "Mercury"), (30.0, "Saturn")],
+    [
+        (6.0, "Mars"),
+        (14.0, "Jupiter"),
+        (21.0, "Venus"),
+        (27.0, "Mercury"),
+        (30.0, "Saturn"),
+    ],
     // Sagittarius
-    [(8.0, "Jupiter"), (14.0, "Venus"), (19.0, "Mercury"), (25.0, "Saturn"), (30.0, "Mars")],
+    [
+        (8.0, "Jupiter"),
+        (14.0, "Venus"),
+        (19.0, "Mercury"),
+        (25.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
     // Capricorn
-    [(6.0, "Venus"), (12.0, "Mercury"), (19.0, "Jupiter"), (25.0, "Mars"), (30.0, "Saturn")],
+    [
+        (6.0, "Venus"),
+        (12.0, "Mercury"),
+        (19.0, "Jupiter"),
+        (25.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
     // Aquarius
-    [(6.0, "Saturn"), (12.0, "Mercury"), (20.0, "Venus"), (25.0, "Jupiter"), (30.0, "Mars")],
+    [
+        (6.0, "Saturn"),
+        (12.0, "Mercury"),
+        (20.0, "Venus"),
+        (25.0, "Jupiter"),
+        (30.0, "Mars"),
+    ],
     // Pisces
-    [(8.0, "Venus"), (14.0, "Jupiter"), (20.0, "Mercury"), (26.0, "Mars"), (30.0, "Saturn")],
+    [
+        (8.0, "Venus"),
+        (14.0, "Jupiter"),
+        (20.0, "Mercury"),
+        (26.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
 ];
 
 // Egyptian terms — the older system.
 const EGYPTIAN_TERMS: [TermRow; 12] = [
-    [(6.0, "Jupiter"), (12.0, "Venus"), (20.0, "Mercury"), (25.0, "Mars"), (30.0, "Saturn")],
-    [(8.0, "Venus"), (14.0, "Mercury"), (22.0, "Jupiter"), (27.0, "Saturn"), (30.0, "Mars")],
-    [(6.0, "Mercury"), (12.0, "Jupiter"), (17.0, "Venus"), (24.0, "Mars"), (30.0, "Saturn")],
-    [(7.0, "Mars"), (13.0, "Venus"), (19.0, "Mercury"), (26.0, "Jupiter"), (30.0, "Saturn")],
-    [(6.0, "Jupiter"), (11.0, "Venus"), (18.0, "Saturn"), (24.0, "Mercury"), (30.0, "Mars")],
-    [(7.0, "Mercury"), (17.0, "Venus"), (21.0, "Jupiter"), (28.0, "Mars"), (30.0, "Saturn")],
-    [(6.0, "Saturn"), (14.0, "Mercury"), (21.0, "Jupiter"), (28.0, "Venus"), (30.0, "Mars")],
-    [(7.0, "Mars"), (11.0, "Venus"), (19.0, "Mercury"), (24.0, "Jupiter"), (30.0, "Saturn")],
-    [(12.0, "Jupiter"), (17.0, "Venus"), (21.0, "Mercury"), (26.0, "Saturn"), (30.0, "Mars")],
-    [(7.0, "Mercury"), (14.0, "Jupiter"), (22.0, "Venus"), (26.0, "Saturn"), (30.0, "Mars")],
-    [(7.0, "Mercury"), (13.0, "Venus"), (20.0, "Jupiter"), (25.0, "Mars"), (30.0, "Saturn")],
-    [(12.0, "Venus"), (16.0, "Jupiter"), (19.0, "Mercury"), (28.0, "Mars"), (30.0, "Saturn")],
+    [
+        (6.0, "Jupiter"),
+        (12.0, "Venus"),
+        (20.0, "Mercury"),
+        (25.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (8.0, "Venus"),
+        (14.0, "Mercury"),
+        (22.0, "Jupiter"),
+        (27.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
+    [
+        (6.0, "Mercury"),
+        (12.0, "Jupiter"),
+        (17.0, "Venus"),
+        (24.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (7.0, "Mars"),
+        (13.0, "Venus"),
+        (19.0, "Mercury"),
+        (26.0, "Jupiter"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (6.0, "Jupiter"),
+        (11.0, "Venus"),
+        (18.0, "Saturn"),
+        (24.0, "Mercury"),
+        (30.0, "Mars"),
+    ],
+    [
+        (7.0, "Mercury"),
+        (17.0, "Venus"),
+        (21.0, "Jupiter"),
+        (28.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (6.0, "Saturn"),
+        (14.0, "Mercury"),
+        (21.0, "Jupiter"),
+        (28.0, "Venus"),
+        (30.0, "Mars"),
+    ],
+    [
+        (7.0, "Mars"),
+        (11.0, "Venus"),
+        (19.0, "Mercury"),
+        (24.0, "Jupiter"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (12.0, "Jupiter"),
+        (17.0, "Venus"),
+        (21.0, "Mercury"),
+        (26.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
+    [
+        (7.0, "Mercury"),
+        (14.0, "Jupiter"),
+        (22.0, "Venus"),
+        (26.0, "Saturn"),
+        (30.0, "Mars"),
+    ],
+    [
+        (7.0, "Mercury"),
+        (13.0, "Venus"),
+        (20.0, "Jupiter"),
+        (25.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
+    [
+        (12.0, "Venus"),
+        (16.0, "Jupiter"),
+        (19.0, "Mercury"),
+        (28.0, "Mars"),
+        (30.0, "Saturn"),
+    ],
 ];
 
 fn term_lookup(table: &[TermRow; 12], lon: f64) -> &'static str {
@@ -1419,11 +1563,7 @@ pub fn lunations_in_window(start_jd: f64, end_jd: f64) -> Vec<Lunation> {
 // `start_jd` at observer position.
 // ------------------------------------------------------------------------------------------------
 
-pub fn next_heliacal_rising(
-    start_jd: f64,
-    object_name: &str,
-    observer: &LatLong,
-) -> Option<f64> {
+pub fn next_heliacal_rising(start_jd: f64, object_name: &str, observer: &LatLong) -> Option<f64> {
     init_swe();
     let mut geopos = [observer.long, observer.lat, 0.0_f64];
     let mut datm = [0.0_f64; 4]; // pressure, temp, RH, KT — 0 = defaults
@@ -1462,11 +1602,11 @@ pub fn next_heliacal_rising(
 
 #[derive(Clone, Debug)]
 pub struct ZRPeriod {
-    pub level: u8,             // 1 for L1
-    pub sign: &'static str,    // current time-lord sign
-    pub lord: &'static str,    // ruler of that sign
-    pub years: f64,            // major-period length in years
-    pub start_year_offset: f64,// cumulative years since start
+    pub level: u8,              // 1 for L1
+    pub sign: &'static str,     // current time-lord sign
+    pub lord: &'static str,     // ruler of that sign
+    pub years: f64,             // major-period length in years
+    pub start_year_offset: f64, // cumulative years since start
     pub end_year_offset: f64,
 }
 

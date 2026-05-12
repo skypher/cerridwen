@@ -151,6 +151,12 @@ impl HttpResponse {
         }
         let mut body_bytes = Vec::new();
         reader.read_to_end(&mut body_bytes).expect("body");
+        if headers
+            .iter()
+            .any(|(k, v)| k == "transfer-encoding" && v.to_ascii_lowercase().contains("chunked"))
+        {
+            body_bytes = decode_chunked_body(&body_bytes);
+        }
         // Gzip / binary bodies aren't valid UTF-8; use lossy conversion
         // for the body field so header-only assertions still work.
         let body = String::from_utf8_lossy(&body_bytes).into_owned();
@@ -168,6 +174,37 @@ impl HttpResponse {
             .find(|(k, _)| *k == n)
             .map(|(_, v)| v.as_str())
     }
+}
+
+fn decode_chunked_body(raw: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        let Some(line_rel) = raw[i..].windows(2).position(|w| w == b"\r\n") else {
+            return raw.to_vec();
+        };
+        let line_end = i + line_rel;
+        let size_line = String::from_utf8_lossy(&raw[i..line_end]);
+        let size_hex = size_line.split(';').next().unwrap_or("").trim();
+        let Ok(size) = usize::from_str_radix(size_hex, 16) else {
+            return raw.to_vec();
+        };
+        i = line_end + 2;
+        if size == 0 {
+            return out;
+        }
+        if i + size > raw.len() {
+            return raw.to_vec();
+        }
+        out.extend_from_slice(&raw[i..i + size]);
+        i += size;
+        if raw.get(i..i + 2) == Some(b"\r\n") {
+            i += 2;
+        } else {
+            return raw.to_vec();
+        }
+    }
+    raw.to_vec()
 }
 
 // ---------------- /health ----------------
@@ -459,11 +496,9 @@ fn planetary_hours_returns_24() {
     let s = Server::spawn();
     let r = s.get("/v1/planetary-hours?date=2026-05-11T00:00:00&latitude=52.5&longitude=13.4");
     assert_eq!(r.status, 200, "body={}", r.body);
-    let hour_count = r.body.matches("\"ruler\":").count();
-    assert_eq!(
-        hour_count,
-        24 + r.body.matches("\"current\":").count().min(1)
-    );
+    let body: serde_json::Value = serde_json::from_str(&r.body).expect("planetary hours JSON");
+    assert_eq!(body["hours"].as_array().expect("hours array").len(), 24);
+    assert!(body.get("current").is_some());
 }
 
 #[test]
@@ -708,9 +743,7 @@ fn lunations_endpoint_lists_phases() {
 #[test]
 fn natal_chart_endpoint_combines_everything() {
     let s = Server::spawn();
-    let r = s.get(
-        "/v1/natal-chart?date=1990-06-15T12:00:00&latitude=52.5&longitude=13.4",
-    );
+    let r = s.get("/v1/natal-chart?date=1990-06-15T12:00:00&latitude=52.5&longitude=13.4");
     assert_eq!(r.status, 200);
     assert!(r.body.contains("\"houses\""));
     assert!(r.body.contains("\"bodies\""));
@@ -729,9 +762,7 @@ fn zodiacal_releasing_endpoint() {
 #[test]
 fn heliacal_endpoint_404_when_unknown() {
     let s = Server::spawn();
-    let r = s.get(
-        "/v1/heliacal/Xylophone?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4",
-    );
+    let r = s.get("/v1/heliacal/Xylophone?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4");
     // Could be 200 or 404 depending on swe behavior; verify it doesn't 500.
     assert!(r.status == 200 || r.status == 404, "status={}", r.status);
 }
@@ -811,10 +842,7 @@ fn openapi_lists_new_paths() {
         "/v1/zodiacal-releasing",
         "/v1/natal-chart",
     ] {
-        assert!(
-            r.body.contains(needed),
-            "OpenAPI missing path {needed}"
-        );
+        assert!(r.body.contains(needed), "OpenAPI missing path {needed}");
     }
 }
 

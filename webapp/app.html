@@ -182,6 +182,7 @@
   <button role="tab" data-tab="eclipses" aria-controls="panel-eclipses" aria-selected="false" tabindex="-1">Eclipses</button>
   <button role="tab" data-tab="stars"    aria-controls="panel-stars"    aria-selected="false" tabindex="-1">Stars</button>
   <button role="tab" data-tab="events"   aria-controls="panel-events"   aria-selected="false" tabindex="-1">Events</button>
+  <button role="tab" data-tab="techniques" aria-controls="panel-techniques" aria-selected="false" tabindex="-1">Techniques</button>
   <button role="tab" data-tab="stream"   aria-controls="panel-stream"   aria-selected="false" tabindex="-1">Stream</button>
   <button role="tab" data-tab="raw"      aria-controls="panel-raw"      aria-selected="false" tabindex="-1">Raw API</button>
 </nav>
@@ -380,6 +381,54 @@
       <button id="events-ical">subscribe (.ics)</button>
     </div>
     <div id="events-result" class="card"></div>
+  </div>
+
+  <!-- ============================================================ TECHNIQUES -->
+  <div class="panel" id="panel-techniques">
+    <div class="controls">
+      <label>technique
+        <select id="tech-kind">
+          <option value="midpoints">midpoints</option>
+          <option value="antiscia">antiscia</option>
+          <option value="decans">decans</option>
+          <option value="terms">terms</option>
+          <option value="triplicity">triplicity</option>
+          <option value="receptions">receptions</option>
+          <option value="equation-of-time">equation of time</option>
+          <option value="ingresses">ingresses</option>
+          <option value="lunations">lunations</option>
+          <option value="heliacal">heliacal rising</option>
+          <option value="zodiacal-releasing">zodiacal releasing</option>
+          <option value="natal-chart">natal chart</option>
+        </select>
+      </label>
+      <label data-tech-field="orb">orb <input id="tech-orb" type="number" value="1.5" min="0.1" max="30" step="0.1" style="width:70px"></label>
+      <label data-tech-field="system">system
+        <select id="tech-system">
+          <option value="ptolemaic">Ptolemaic</option>
+          <option value="egyptian">Egyptian</option>
+        </select>
+      </label>
+      <label data-tech-field="count">count <input id="tech-count" type="number" value="4" min="1" max="200" style="width:70px"></label>
+      <label data-tech-field="lookahead">lookahead <input id="tech-lookahead" type="number" value="90" min="1" max="3650" style="width:90px"></label>
+      <label data-tech-field="date-end">end <input id="tech-date-end" type="text" placeholder="2026-04-01T00:00:00" size="20"></label>
+      <label data-tech-field="star">star <input id="tech-star" type="text" value="Sirius" size="12"></label>
+      <label data-tech-field="natal-date">natal <input id="tech-natal-date" type="text" placeholder="1990-06-15T12:00:00" size="22"></label>
+      <label data-tech-field="natal-lat">natal lat <input id="tech-natal-lat" type="number" step="0.01" style="width:80px"></label>
+      <label data-tech-field="natal-lon">natal lon <input id="tech-natal-lon" type="number" step="0.01" style="width:80px"></label>
+      <label data-tech-field="house-system">house
+        <select id="tech-house-system">
+          <option value="P">Placidus</option>
+          <option value="W">Whole-sign</option>
+          <option value="K">Koch</option>
+          <option value="O">Porphyry</option>
+          <option value="R">Regiomontanus</option>
+          <option value="C">Campanus</option>
+        </select>
+      </label>
+      <button id="tech-go">compute</button>
+    </div>
+    <div id="tech-result" class="card"></div>
   </div>
 
   <!-- ============================================================ STREAM -->
@@ -1116,6 +1165,201 @@ async function refreshEvents() {
 }
 
 // =========================================================================
+// TECHNIQUES tab
+// =========================================================================
+
+const TECH_FIELDS = {
+  midpoints: ['orb'],
+  antiscia: ['orb'],
+  decans: [],
+  terms: ['system'],
+  triplicity: [],
+  receptions: [],
+  'equation-of-time': [],
+  ingresses: ['count'],
+  lunations: ['lookahead', 'date-end'],
+  heliacal: ['star'],
+  'zodiacal-releasing': ['natal-date', 'natal-lat', 'natal-lon', 'count'],
+  'natal-chart': ['house-system', 'orb'],
+};
+
+function updateTechniqueControls() {
+  const kind = document.getElementById('tech-kind').value;
+  const visible = new Set(TECH_FIELDS[kind] || []);
+  document.querySelectorAll('[data-tech-field]').forEach(el => {
+    el.style.display = visible.has(el.dataset.techField) ? '' : 'none';
+  });
+  document.getElementById('tech-count').value = kind === 'zodiacal-releasing' ? '12' : '4';
+  document.getElementById('tech-orb').value = kind === 'antiscia' ? '1' : '1.5';
+}
+
+document.getElementById('tech-kind').addEventListener('change', updateTechniqueControls);
+document.getElementById('tech-go').addEventListener('click', refreshTechnique);
+
+async function refreshTechnique() {
+  const el = document.getElementById('tech-result');
+  el.innerHTML = '<span class="muted">loading…</span>';
+  try {
+    const kind = document.getElementById('tech-kind').value;
+    const [path, qs] = buildTechniqueRequest(kind);
+    const d = await api(path, qs);
+    el.innerHTML = renderTechnique(kind, d);
+  } catch (e) {
+    showError(el, e);
+  }
+}
+
+function buildTechniqueRequest(kind) {
+  const orb = parseFloat(document.getElementById('tech-orb').value) || 1.5;
+  const count = parseInt(document.getElementById('tech-count').value, 10) || 4;
+  switch (kind) {
+    case 'midpoints':
+      return ['/v1/midpoints', buildQs({ orb })];
+    case 'antiscia':
+      return ['/v1/antiscia', buildQs({ orb })];
+    case 'decans':
+      return ['/v1/decans', buildQs()];
+    case 'terms':
+      return ['/v1/terms', buildQs({ system: document.getElementById('tech-system').value })];
+    case 'triplicity':
+      return ['/v1/triplicity', buildQs()];
+    case 'receptions':
+      return ['/v1/receptions', buildQs()];
+    case 'equation-of-time':
+      return ['/v1/equation-of-time', buildQs()];
+    case 'ingresses':
+      return ['/v1/ingresses', buildQs({ count })];
+    case 'lunations': {
+      const extra = { lookahead: document.getElementById('tech-lookahead').value };
+      const end = document.getElementById('tech-date-end').value.trim();
+      if (end) extra.date_end = end;
+      return ['/v1/lunations', buildQs(extra)];
+    }
+    case 'heliacal':
+      return [`/v1/heliacal/${encodeURIComponent(document.getElementById('tech-star').value.trim() || 'Sirius')}`, buildQs()];
+    case 'zodiacal-releasing': {
+      const natal = document.getElementById('tech-natal-date').value.trim();
+      if (!natal) throw new Error('natal date required');
+      const lat = parseFloatOrNull(document.getElementById('tech-natal-lat').value) ?? ctx.lat();
+      const lon = parseFloatOrNull(document.getElementById('tech-natal-lon').value) ?? ctx.lon();
+      if (lat === null || lon === null) throw new Error('natal latitude and longitude required');
+      const p = new URLSearchParams({
+        natal_date: natal,
+        natal_latitude: lat,
+        natal_longitude: lon,
+        count,
+      });
+      if (ctx.tz()) p.set('tz', ctx.tz());
+      return ['/v1/zodiacal-releasing', p.toString()];
+    }
+    case 'natal-chart':
+      return ['/v1/natal-chart', buildQs({
+        house_system: document.getElementById('tech-house-system').value,
+        orb,
+      })];
+    default:
+      throw new Error(`unknown technique: ${kind}`);
+  }
+}
+
+function renderTechnique(kind, d) {
+  switch (kind) {
+    case 'midpoints':
+      return `<h3>${d.midpoints.length} midpoints, ${d.hits.length} hits</h3>
+        ${renderTable(d.hits.slice(0, 80), [['a','A'], ['b','B'], ['hit_by','hit by'], ['angle','angle'], ['orb','orb'], ['midpoint','midpoint']])}
+        ${renderJsonDetails(d)}`;
+    case 'antiscia':
+      return `<h3>${d.bodies.length} bodies, ${d.hits.length} hits</h3>
+        ${renderTable(d.bodies, [['body','body'], ['longitude','longitude'], ['antiscion','antiscion'], ['contra_antiscion','contra']])}
+        ${renderTable(d.hits, [['body','body'], ['kind','kind'], ['hit_by','hit by'], ['orb','orb']])}
+        ${renderJsonDetails(d)}`;
+    case 'decans':
+      return `<h3>Decans</h3>${renderTable(d.bodies, [
+        ['body','body'], ['longitude','longitude'], ['decan_in_sign','decan'],
+        ['egyptian_index','egyptian'], ['triplicity_ruler','triplicity'], ['chaldean_ruler','chaldean'],
+      ])}${renderJsonDetails(d)}`;
+    case 'terms':
+      return `<h3>${d.system} terms</h3>${renderTable(d.bodies, [
+        ['body','body'], ['longitude','longitude'], ['term_ruler','ruler'],
+      ])}${renderJsonDetails(d)}`;
+    case 'triplicity':
+      return `<h3>Triplicity</h3>${renderTable(d.bodies, [
+        ['body','body'], ['longitude','longitude'], ['day_ruler','day'],
+        ['night_ruler','night'], ['participating_ruler','participating'], ['active_ruler','active'],
+      ])}${renderJsonDetails(d)}`;
+    case 'receptions':
+      return `<h3>${d.receptions.length} receptions</h3>${renderTable(d.receptions, [
+        ['a','A'], ['b','B'], ['kind','kind'],
+      ])}${renderJsonDetails(d)}`;
+    case 'equation-of-time':
+      return `<h3>Equation of time</h3><div class="kv">
+        <b>iso</b><span>${d.iso_date}</span>
+        <b>minutes</b><span>${formatCell(d.equation_of_time_minutes)}</span>
+      </div>${renderJsonDetails(d)}`;
+    case 'ingresses':
+      return `<h3>${d.ingresses.length} ingresses</h3>${renderTable(d.ingresses, [
+        ['iso_date','date'], ['sign','sign'], ['kind','kind'], ['jd','jd'],
+      ])}${renderJsonDetails(d)}`;
+    case 'lunations':
+      return `<h3>${d.lunations.length} lunations</h3>${renderTable(d.lunations, [
+        ['iso_date','date'], ['kind','phase'], ['moon_longitude','moon'], ['jd','jd'],
+      ])}${renderJsonDetails(d)}`;
+    case 'heliacal':
+      return `<h3>${d.star}</h3><div class="kv">
+        <b>iso</b><span>${d.iso_date}</span>
+        <b>jd</b><span>${formatCell(d.jd)}</span>
+      </div>${renderJsonDetails(d)}`;
+    case 'zodiacal-releasing':
+      return `<h3>${d.periods.length} periods</h3><div class="kv">
+        <b>lot of spirit</b><span>${formatCell(d.lot_spirit)}</span>
+        <b>sect</b><span>${d.is_day ? 'day' : 'night'}</span>
+      </div>${renderTable(d.periods, [
+        ['level','level'], ['sign','sign'], ['lord','lord'], ['years','years'],
+        ['start_year_offset','start'], ['end_year_offset','end'],
+      ])}${renderJsonDetails(d)}`;
+    case 'natal-chart':
+      return `<h3>Natal chart</h3><div class="kv">
+        <b>iso</b><span>${d.iso_date}</span>
+        <b>ascendant</b><span>${formatCell(d.ascendant)}</span>
+        <b>MC</b><span>${formatCell(d.mc)}</span>
+        <b>sect</b><span>${d.is_day ? 'day' : 'night'}</span>
+      </div>${renderTable(d.bodies, [['name','body'], ['longitude','longitude'], ['house','house']])}
+      ${renderTable(d.lots, [['name','lot'], ['longitude','longitude'], ['formula','formula']])}
+      ${renderJsonDetails(d)}`;
+    default:
+      return renderJsonDetails(d);
+  }
+}
+
+function renderTable(rows, columns) {
+  if (!rows || !rows.length) return `<div class="muted">none</div>`;
+  let h = `<table style="margin-top:1rem"><thead><tr>`;
+  columns.forEach(([, label]) => { h += `<th>${escapeHtml(label)}</th>`; });
+  h += `</tr></thead><tbody>`;
+  rows.forEach(row => {
+    h += `<tr>`;
+    columns.forEach(([key]) => { h += `<td>${formatCell(row[key])}</td>`; });
+    h += `</tr>`;
+  });
+  h += `</tbody></table>`;
+  return h;
+}
+
+function formatCell(v) {
+  if (v === null || v === undefined) return '<span class="muted">—</span>';
+  if (typeof v === 'number') return Number.isFinite(v) ? v.toFixed(4) : String(v);
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (typeof v === 'object') return escapeHtml(JSON.stringify(v));
+  return escapeHtml(String(v));
+}
+
+function renderJsonDetails(d) {
+  return `<details style="margin-top:1rem"><summary class="muted">raw json</summary>
+    <pre class="json">${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+  </details>`;
+}
+
+// =========================================================================
 // STREAM tab
 // =========================================================================
 
@@ -1209,19 +1453,22 @@ const TAB_REFRESH = {
   bodies: refreshBody,
   houses: refreshHouses,
   aspects: refreshAspects,
+  techniques: refreshTechnique,
   // transits/returns/eclipses/stars/events/stream/raw all initiate on user action
 };
 
 // Hash-based deep linking + back-button support.
 function tabFromHash() {
   const h = (location.hash || '').replace(/^#/, '');
-  const valid = ['now','chart','bodies','houses','aspects','transits','returns','eclipses','stars','events','stream','raw'];
+  const valid = ['now','chart','bodies','houses','aspects','transits','returns','eclipses','stars','events','techniques','stream','raw'];
   return valid.includes(h) ? h : null;
 }
 window.addEventListener('hashchange', () => {
   const t = tabFromHash();
   if (t) activate(t);
 });
+
+updateTechniqueControls();
 
 // initial load: honour the hash if present, otherwise default to Now.
 const initialTab = tabFromHash() || 'now';

@@ -355,6 +355,64 @@ fn tools_call_get_twilight_returns_layers() {
 }
 
 #[test]
+fn tools_call_round9_tools_return_structures() {
+    let resps = talk(&[
+        serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize"}),
+        serde_json::json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+            "name":"get_midpoints",
+            "arguments":{"date":"2026-05-06T12:00:00","orb":1.5}
+        }}),
+        serde_json::json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{
+            "name":"get_terms",
+            "arguments":{"date":"2026-05-06T12:00:00","system":"egyptian"}
+        }}),
+        serde_json::json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{
+            "name":"get_ingresses",
+            "arguments":{"date":"2026-01-01T00:00:00","count":2}
+        }}),
+        serde_json::json!({"jsonrpc":"2.0","id":5,"method":"tools/call","params":{
+            "name":"get_zodiacal_releasing",
+            "arguments":{
+                "natal_date":"1990-06-15T12:00:00",
+                "natal_latitude":52.5,
+                "natal_longitude":13.4,
+                "count":3
+            }
+        }}),
+        serde_json::json!({"jsonrpc":"2.0","id":6,"method":"tools/call","params":{
+            "name":"get_natal_chart",
+            "arguments":{
+                "date":"1990-06-15T12:00:00",
+                "latitude":52.5,
+                "longitude":13.4
+            }
+        }}),
+    ]);
+    assert!(resps[1]["result"]["structuredContent"]["midpoints"].is_array());
+    assert_eq!(
+        resps[2]["result"]["structuredContent"]["system"],
+        "egyptian"
+    );
+    assert_eq!(
+        resps[3]["result"]["structuredContent"]["ingresses"]
+            .as_array()
+            .expect("ingresses")
+            .len(),
+        2
+    );
+    assert_eq!(
+        resps[4]["result"]["structuredContent"]["periods"]
+            .as_array()
+            .expect("periods")
+            .len(),
+        3
+    );
+    let natal = &resps[5]["result"]["structuredContent"];
+    assert!(natal["bodies"].is_array());
+    assert!(natal["lots"].is_array());
+}
+
+#[test]
 fn tools_call_get_houses_requires_observer() {
     // Houses are only meaningful with lat/lon; without them this should
     // surface an error.

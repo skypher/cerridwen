@@ -3211,7 +3211,9 @@ async fn triplicity_endpoint(Query(q): Query<HashMap<String, String>>) -> Respon
     let jd = jd_opt.unwrap_or_else(jd_now);
     let chart = snapshot_longitudes(jd);
     let is_day = latlong.map(|o| {
-        let sun_lon = swisseph::swe::calc_ut(jd, 0, 2).map(|r| r.out[0]).unwrap_or(0.0);
+        let sun_lon = swisseph::swe::calc_ut(jd, 0, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(0.0);
         let h = compute_houses(jd, o.lat, o.long, 'P');
         let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
         (sun_lon - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0)
@@ -3295,10 +3297,12 @@ async fn ingresses_endpoint(Query(q): Query<HashMap<String, String>>) -> Respons
     let list = astrology::upcoming_cardinal_ingresses(start_jd, count);
     let arr: Vec<Value> = list
         .iter()
-        .map(|i| json!({
-            "jd": i.jd, "iso_date": i.iso_date,
-            "sign": i.sign, "kind": i.kind,
-        }))
+        .map(|i| {
+            json!({
+                "jd": i.jd, "iso_date": i.iso_date,
+                "sign": i.sign, "kind": i.kind,
+            })
+        })
         .collect();
     json_ok(json!({
         "start_jd": start_jd,
@@ -3332,10 +3336,12 @@ async fn lunations_endpoint(Query(q): Query<HashMap<String, String>>) -> Respons
     let list = astrology::lunations_in_window(start, end);
     let arr: Vec<Value> = list
         .iter()
-        .map(|l| json!({
-            "jd": l.jd, "iso_date": l.iso_date,
-            "kind": l.kind, "moon_longitude": l.moon_longitude,
-        }))
+        .map(|l| {
+            json!({
+                "jd": l.jd, "iso_date": l.iso_date,
+                "kind": l.kind, "moon_longitude": l.moon_longitude,
+            })
+        })
         .collect();
     json_ok(json!({
         "start_jd": start,
@@ -3412,14 +3418,16 @@ async fn zodiacal_releasing_endpoint(Query(q): Query<HashMap<String, String>>) -
     let periods = astrology::zodiacal_releasing_l1(spirit, count);
     let arr: Vec<Value> = periods
         .iter()
-        .map(|p| json!({
-            "level": p.level,
-            "sign": p.sign,
-            "lord": p.lord,
-            "years": p.years,
-            "start_year_offset": p.start_year_offset,
-            "end_year_offset": p.end_year_offset,
-        }))
+        .map(|p| {
+            json!({
+                "level": p.level,
+                "sign": p.sign,
+                "lord": p.lord,
+                "years": p.years,
+                "start_year_offset": p.start_year_offset,
+                "end_year_offset": p.end_year_offset,
+            })
+        })
         .collect();
     json_ok(json!({
         "natal_jd": natal_jd,
@@ -3485,15 +3493,25 @@ async fn natal_chart_endpoint(Query(q): Query<HashMap<String, String>>) -> Respo
     let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
     let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
     let parts = astrology::arabic_parts(
-        h.ascendant, sun, moon, mercury, venus, mars, jupiter, saturn, is_day,
+        h.ascendant,
+        sun,
+        moon,
+        mercury,
+        venus,
+        mars,
+        jupiter,
+        saturn,
+        is_day,
     );
     let part_arr: Vec<Value> = parts
         .iter()
-        .map(|p| json!({
-            "name": p.name, "longitude": p.longitude,
-            "position": planet_longitude_to_json(&PlanetLongitude::new(p.longitude)),
-            "formula": p.formula,
-        }))
+        .map(|p| {
+            json!({
+                "name": p.name, "longitude": p.longitude,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(p.longitude)),
+                "formula": p.formula,
+            })
+        })
         .collect();
     json_ok(json!({
         "jd": jd,

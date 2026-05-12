@@ -67,6 +67,15 @@ http://127.0.0.1:2828/v1/events.ics?planets=Mercury&types=rx,direct
 
 The feed updates whenever the underlying DB does.
 
+## Bonus: get a full natal chart in one call
+
+```bash
+curl 'http://127.0.0.1:2828/v1/natal-chart?date=1990-06-15T12:00:00&latitude=52.5&longitude=13.4&house_system=P'
+```
+
+That response combines house cusps, bodies with house placement,
+instantaneous aspects, and Hellenistic lots.
+
 ## Bonus: ask in sidereal mode
 
 Add `?zodiac=sidereal&ayanamsha=lahiri` (or `krishnamurti`,

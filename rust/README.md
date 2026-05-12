@@ -24,7 +24,7 @@ cargo build                                # lib + cli
 cargo build --features server              # + HTTP server, OpenAPI, /docs, /chart, /app
 cargo build --features events              # + sqlite event generator
 cargo build --features mcp --bin cerridwen-mcp
-cargo test                                 # 62 tests across numerical, features, mcp
+cargo test                                 # unit + integration tests
 ```
 
 ## Running the server
@@ -59,6 +59,18 @@ are looked up at `./sweph` (cwd), then `../sweph`. Override with
 | `GET /v1/transits`          | Active transit-to-natal aspects                              |
 | `GET /v1/return`            | Next solar/lunar/planetary return                            |
 | `GET /v1/eclipses`          | Solar/lunar eclipse list with first/last contacts            |
+| `GET /v1/midpoints`         | Pairwise midpoints plus 0/45/90/135/180 harmonic hits        |
+| `GET /v1/antiscia`          | Antiscia and contra-antiscia positions plus chart hits       |
+| `GET /v1/decans`            | Triplicity, Chaldean, and Egyptian decan assignments         |
+| `GET /v1/terms`             | Ptolemaic or Egyptian bound ruler per body                   |
+| `GET /v1/triplicity`        | Dorothean day/night/participating triplicity rulers          |
+| `GET /v1/receptions`        | Mutual receptions by traditional domicile rulership          |
+| `GET /v1/equation-of-time`  | Apparent solar time minus mean solar time, in minutes        |
+| `GET /v1/ingresses`         | Upcoming cardinal-sign ingresses                             |
+| `GET /v1/lunations`         | New, quarter, full, and last-quarter Moons in a window       |
+| `GET /v1/heliacal/{star}`   | Next heliacal rising for a fixed star and observer           |
+| `GET /v1/zodiacal-releasing`| Zodiacal Releasing L1 periods from the Lot of Spirit         |
+| `GET /v1/natal-chart`       | Houses, bodies-with-houses, aspects, and Hellenistic lots    |
 | `GET /v1/events`            | DB-backed astrological events (aspects/ingresses/retrogrades) |
 | `GET /v1/events.ics`        | Same as above as an iCal feed (RFC 5545)                     |
 | `GET /v1/olivier`           | Compact body positions in radians + houses                   |
@@ -102,6 +114,8 @@ Tabbed single-page console covering every endpoint:
 - **Stars** — every star in the bundled catalog
 - **Events** — DB-backed events table; "subscribe" button downloads the
   iCal feed
+- **Techniques** — midpoint, antiscia, decan, term, triplicity, reception,
+  ingress, lunation, heliacal, Zodiacal Releasing, and natal-chart calls
 - **Stream** — live SSE position display via `EventSource`
 - **Raw API** — generic GET console with X-Cache header echo, links to
   `/openapi.json` and `/docs`
@@ -126,7 +140,14 @@ IDE MCP config:
 ```
 
 Tools: `get_sun`, `get_moon`, `get_body`, `get_houses`, `get_aspects`,
-`get_transits`, `get_return`, `get_eclipses`, `get_star`, `get_events`.
+`get_transits`, `get_return`, `get_eclipses`, `get_star`, `get_events`,
+`get_declinations`, `get_stations`, `get_planetary_hours`,
+`get_arabic_parts`, `get_profections`, `get_synastry`,
+`get_progressions`, `get_prenatal_eclipse`, `get_twilight`,
+`get_midpoints`, `get_antiscia`, `get_decans`, `get_terms`,
+`get_triplicity`, `get_receptions`, `get_equation_of_time`,
+`get_ingresses`, `get_lunations`, `get_zodiacal_releasing`, and
+`get_natal_chart`.
 
 ## Library API
 

@@ -34,6 +34,11 @@ Among its features:
   returns, void-of-course Moon, lunation number, and a sqlite-backed
   events database with an iCal feed.
 
+* Traditional technique endpoints for midpoints, antiscia, decans, terms,
+  triplicity rulers, receptions, planetary hours, Hellenistic lots,
+  profections, Zodiacal Releasing, cardinal ingresses, lunations, heliacal
+  rising, and combined natal charts.
+
 * Time-zone-aware date input via IANA names (Europe/Berlin etc.).
 
 This repository hosts the **Rust port**. The original Python package was
