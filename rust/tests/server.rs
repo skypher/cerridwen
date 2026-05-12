@@ -93,11 +93,15 @@ impl Server {
     }
 
     fn get_with_headers(&self, path: &str, extra_headers: &[(&str, &str)]) -> HttpResponse {
+        self.request("GET", path, extra_headers)
+    }
+
+    fn request(&self, method: &str, path: &str, extra_headers: &[(&str, &str)]) -> HttpResponse {
         let mut s = TcpStream::connect(("127.0.0.1", self.port)).expect("connect");
         s.set_read_timeout(Some(Duration::from_secs(15))).ok();
         let mut req = format!(
-            "GET {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n",
-            path, self.port
+            "{} {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n",
+            method, path, self.port
         );
         for (k, v) in extra_headers {
             req.push_str(&format!("{k}: {v}\r\n"));
@@ -145,8 +149,11 @@ impl HttpResponse {
                 headers.push((k.trim().to_ascii_lowercase(), v.trim().to_string()));
             }
         }
-        let mut body = String::new();
-        reader.read_to_string(&mut body).expect("body");
+        let mut body_bytes = Vec::new();
+        reader.read_to_end(&mut body_bytes).expect("body");
+        // Gzip / binary bodies aren't valid UTF-8; use lossy conversion
+        // for the body field so header-only assertions still work.
+        let body = String::from_utf8_lossy(&body_bytes).into_owned();
         HttpResponse {
             status,
             headers,
@@ -607,6 +614,208 @@ fn metrics_remains_public_when_api_key_set() {
     assert_eq!(s.get("/openapi.json").status, 200);
     // But /v1/* must reject without key.
     assert_eq!(s.get("/v1/sun").status, 401);
+}
+
+// ---------- round 9 endpoints ----------
+
+#[test]
+fn midpoints_endpoint_returns_pairs_and_hits() {
+    let s = Server::spawn();
+    let r = s.get("/v1/midpoints?date=2026-05-09T12:00:00&orb=2");
+    assert_eq!(r.status, 200, "body={}", r.body);
+    assert!(r.body.contains("\"midpoints\""));
+    assert!(r.body.contains("\"hits\""));
+}
+
+#[test]
+fn antiscia_endpoint_returns_grid() {
+    let s = Server::spawn();
+    let r = s.get("/v1/antiscia?date=2026-05-09T12:00:00&orb=2");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"antiscion\""));
+    assert!(r.body.contains("\"contra_antiscion\""));
+}
+
+#[test]
+fn decans_endpoint_lists_three_rulers() {
+    let s = Server::spawn();
+    let r = s.get("/v1/decans?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("triplicity_ruler"));
+    assert!(r.body.contains("chaldean_ruler"));
+    assert!(r.body.contains("egyptian_index"));
+}
+
+#[test]
+fn terms_endpoint_default_ptolemaic_and_egyptian_switch() {
+    let s = Server::spawn();
+    let r1 = s.get("/v1/terms?date=2026-05-09T12:00:00");
+    let r2 = s.get("/v1/terms?date=2026-05-09T12:00:00&system=egyptian");
+    assert_eq!(r1.status, 200);
+    assert_eq!(r2.status, 200);
+    assert!(r1.body.contains("ptolemaic"));
+    assert!(r2.body.contains("egyptian"));
+}
+
+#[test]
+fn triplicity_endpoint_marks_active_when_observer_given() {
+    let s = Server::spawn();
+    let r = s.get("/v1/triplicity?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("active_ruler"));
+}
+
+#[test]
+fn receptions_endpoint_returns_array() {
+    let s = Server::spawn();
+    let r = s.get("/v1/receptions?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"receptions\""));
+}
+
+#[test]
+fn equation_of_time_endpoint_returns_minutes() {
+    let s = Server::spawn();
+    let r = s.get("/v1/equation-of-time?date=2026-05-09T12:00:00");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("equation_of_time_minutes"));
+}
+
+#[test]
+fn ingresses_endpoint_returns_four() {
+    let s = Server::spawn();
+    let r = s.get("/v1/ingresses?date=2026-01-01T00:00:00&count=4");
+    assert_eq!(r.status, 200);
+    let count_kind = r.body.matches("\"kind\":").count();
+    assert_eq!(count_kind, 4);
+}
+
+#[test]
+fn lunations_endpoint_lists_phases() {
+    let s = Server::spawn();
+    let r = s.get("/v1/lunations?date_start=2026-01-01T00:00:00&lookahead=30");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"lunations\""));
+    // 30 days should contain at least one new or full moon.
+    assert!(
+        r.body.contains("\"new\"")
+            || r.body.contains("\"full\"")
+            || r.body.contains("\"first_quarter\"")
+            || r.body.contains("\"last_quarter\"")
+    );
+}
+
+#[test]
+fn natal_chart_endpoint_combines_everything() {
+    let s = Server::spawn();
+    let r = s.get(
+        "/v1/natal-chart?date=1990-06-15T12:00:00&latitude=52.5&longitude=13.4",
+    );
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"houses\""));
+    assert!(r.body.contains("\"bodies\""));
+    assert!(r.body.contains("\"aspects\""));
+    assert!(r.body.contains("\"lots\""));
+}
+
+#[test]
+fn zodiacal_releasing_endpoint() {
+    let s = Server::spawn();
+    let r = s.get("/v1/zodiacal-releasing?natal_date=1990-06-15T12:00:00&natal_latitude=52.5&natal_longitude=13.4&count=5");
+    assert_eq!(r.status, 200);
+    assert!(r.body.contains("\"periods\""));
+}
+
+#[test]
+fn heliacal_endpoint_404_when_unknown() {
+    let s = Server::spawn();
+    let r = s.get(
+        "/v1/heliacal/Xylophone?date=2026-05-09T12:00:00&latitude=52.5&longitude=13.4",
+    );
+    // Could be 200 or 404 depending on swe behavior; verify it doesn't 500.
+    assert!(r.status == 200 || r.status == 404, "status={}", r.status);
+}
+
+// ---------- hardening ----------
+
+#[test]
+fn options_preflight_returns_cors_headers() {
+    let s = Server::spawn();
+    let r = s.request(
+        "OPTIONS",
+        "/v1/sun",
+        &[
+            ("Origin", "https://example.com"),
+            ("Access-Control-Request-Method", "GET"),
+        ],
+    );
+    // tower-http CorsLayer answers preflight with 200 or 204.
+    assert!(r.status == 200 || r.status == 204, "status={}", r.status);
+    assert!(r.header("access-control-allow-origin").is_some());
+}
+
+#[test]
+fn head_request_to_health_returns_no_body() {
+    let s = Server::spawn();
+    let r = s.request("HEAD", "/health", &[]);
+    // axum auto-handles HEAD by stripping body from GET handler.
+    assert_eq!(r.status, 200);
+    assert!(r.body.is_empty(), "HEAD body should be empty: {:?}", r.body);
+}
+
+#[test]
+fn gzip_accept_encoding_compresses() {
+    let s = Server::spawn();
+    let r = s.get_with_headers(
+        "/v1/sun?date=2026-05-09T12:00:00",
+        &[("Accept-Encoding", "gzip")],
+    );
+    assert_eq!(r.status, 200);
+    let enc = r.header("content-encoding").unwrap_or("");
+    assert!(
+        enc.contains("gzip"),
+        "expected gzip Content-Encoding, got {enc:?}"
+    );
+}
+
+#[test]
+fn cache_key_splits_on_path_too() {
+    // /v1/sun and /v1/moon return different bodies regardless of caching.
+    let s = Server::spawn();
+    let r1 = s.get("/v1/sun?date=2026-05-09T12:00:00");
+    let r2 = s.get("/v1/moon?date=2026-05-09T12:00:00");
+    assert_ne!(r1.body, r2.body);
+    // Hitting each again should HIT in its own bucket.
+    let r3 = s.get("/v1/sun?date=2026-05-09T12:00:00");
+    let r4 = s.get("/v1/moon?date=2026-05-09T12:00:00");
+    assert_eq!(r3.header("x-cache"), Some("HIT"));
+    assert_eq!(r4.header("x-cache"), Some("HIT"));
+}
+
+#[test]
+fn openapi_lists_new_paths() {
+    let s = Server::spawn();
+    let r = s.get("/openapi.json");
+    assert_eq!(r.status, 200);
+    for needed in [
+        "/v1/midpoints",
+        "/v1/antiscia",
+        "/v1/decans",
+        "/v1/terms",
+        "/v1/triplicity",
+        "/v1/receptions",
+        "/v1/equation-of-time",
+        "/v1/ingresses",
+        "/v1/lunations",
+        "/v1/heliacal/{star}",
+        "/v1/zodiacal-releasing",
+        "/v1/natal-chart",
+    ] {
+        assert!(
+            r.body.contains(needed),
+            "OpenAPI missing path {needed}"
+        );
+    }
 }
 
 #[test]

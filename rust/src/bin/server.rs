@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT AND AGPL-3.0-only
 
+#![recursion_limit = "512"]
+
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -204,6 +206,18 @@ async fn main() {
         .route("/v1/synastry", get(synastry_endpoint))
         .route("/v1/composite", get(composite_endpoint))
         .route("/v1/progressions", get(progressions_endpoint))
+        .route("/v1/midpoints", get(midpoints_endpoint))
+        .route("/v1/antiscia", get(antiscia_endpoint))
+        .route("/v1/decans", get(decans_endpoint))
+        .route("/v1/terms", get(terms_endpoint))
+        .route("/v1/triplicity", get(triplicity_endpoint))
+        .route("/v1/receptions", get(receptions_endpoint))
+        .route("/v1/equation-of-time", get(equation_of_time_endpoint))
+        .route("/v1/ingresses", get(ingresses_endpoint))
+        .route("/v1/lunations", get(lunations_endpoint))
+        .route("/v1/heliacal/:star", get(heliacal_endpoint))
+        .route("/v1/zodiacal-releasing", get(zodiacal_releasing_endpoint))
+        .route("/v1/natal-chart", get(natal_chart_endpoint))
         .route("/v1/stream/sun", get(stream_sun_endpoint))
         .route("/v1/stream/moon", get(stream_moon_endpoint))
         .route("/v1/stream/body/:name", get(stream_body_endpoint))
@@ -1665,6 +1679,125 @@ fn openapi_spec() -> Value {
                     "responses": { "200": { "description": "Progressed chart" } }
                 }
             },
+            "/v1/midpoints": {
+                "get": {
+                    "summary": "Every pairwise midpoint, plus harmonic hits",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_number("orb", "Degrees (default 1.5)", false),
+                    ]),
+                    "responses": { "200": { "description": "Midpoint grid" } }
+                }
+            },
+            "/v1/antiscia": {
+                "get": {
+                    "summary": "Antiscia + contra-antiscia per body plus hits",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_number("orb", "Degrees (default 1)", false),
+                    ]),
+                    "responses": { "200": { "description": "Antiscia grid" } }
+                }
+            },
+            "/v1/decans": {
+                "get": {
+                    "summary": "Per-body decan with Triplicity / Chaldean / Egyptian rulers",
+                    "parameters": json!([date_param, tz_param]),
+                    "responses": { "200": { "description": "Decan assignments" } }
+                }
+            },
+            "/v1/terms": {
+                "get": {
+                    "summary": "Per-body Ptolemaic/Egyptian bound ruler",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_string("system", "ptolemaic (default) | egyptian", false),
+                    ]),
+                    "responses": { "200": { "description": "Bound rulers" } }
+                }
+            },
+            "/v1/triplicity": {
+                "get": {
+                    "summary": "Dorothean triplicity rulers per body",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Triplicity rulers" } }
+                }
+            },
+            "/v1/receptions": {
+                "get": {
+                    "summary": "Mutual receptions by traditional rulership",
+                    "parameters": json!([date_param, tz_param]),
+                    "responses": { "200": { "description": "Receptions list" } }
+                }
+            },
+            "/v1/equation-of-time": {
+                "get": {
+                    "summary": "Apparent solar time minus mean solar time (minutes)",
+                    "parameters": json!([date_param, tz_param]),
+                    "responses": { "200": { "description": "Equation of time" } }
+                }
+            },
+            "/v1/ingresses": {
+                "get": {
+                    "summary": "Upcoming cardinal-sign ingresses (equinoxes / solstices)",
+                    "parameters": json!([
+                        date_param, tz_param,
+                        p_number("count", "Default 4", false),
+                    ]),
+                    "responses": { "200": { "description": "Cardinal ingresses" } }
+                }
+            },
+            "/v1/lunations": {
+                "get": {
+                    "summary": "Lunations (new/quarter/full/last-quarter) in a window",
+                    "parameters": json!([
+                        p_string("date_start", "ISO date or JD (or use date)", false),
+                        p_string("date_end", "Inclusive end (else use lookahead)", false),
+                        p_number("lookahead", "Days forward (default 90)", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Lunations list" } }
+                }
+            },
+            "/v1/heliacal/{star}": {
+                "get": {
+                    "summary": "Next heliacal-rising JD for a star at an observer",
+                    "parameters": json!([
+                        {"name":"star","in":"path","required":true,
+                         "description":"Star name (Sirius, Spica, Antares, ...)",
+                         "schema":{"type":"string"}},
+                        date_param, lat_param, long_param, tz_param,
+                    ]),
+                    "responses": { "200": { "description": "Heliacal rising JD" },
+                                   "404": { "description": "No event found in horizon" } }
+                }
+            },
+            "/v1/zodiacal-releasing": {
+                "get": {
+                    "summary": "Zodiacal Releasing L1 periods from the Lot of Spirit",
+                    "parameters": json!([
+                        p_string("natal_date", "ISO date or JD", true),
+                        p_number("natal_latitude", "", true),
+                        p_number("natal_longitude", "", true),
+                        p_number("count", "Default 12", false),
+                        tz_param,
+                    ]),
+                    "responses": { "200": { "description": "L1 period list" } }
+                }
+            },
+            "/v1/natal-chart": {
+                "get": {
+                    "summary": "Combined natal chart in one call: houses + bodies-with-houses + aspects + lots",
+                    "parameters": json!([
+                        date_param, lat_param, long_param, tz_param,
+                        p_string("house_system", "Letter code or name", false),
+                        p_number("orb", "Aspect orb (default 5)", false),
+                    ]),
+                    "responses": { "200": { "description": "Full natal chart" } }
+                }
+            },
         }
     })
 }
@@ -2913,6 +3046,466 @@ async fn progressions_endpoint(Query(q): Query<HashMap<String, String>>) -> Resp
         }
     }
     json_ok(Value::Object(wrap))
+}
+
+// -- round 9 endpoints -----------------------------------------------------
+
+async fn midpoints_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let orb: f64 = match q.get("orb").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("orb must be positive"),
+        Some(Err(_)) => return bad_request("orb must be a number"),
+        None => 1.5,
+    };
+    let chart = snapshot_longitudes(jd);
+    let pairs = astrology::midpoints(&chart);
+    let mps: Vec<Value> = pairs
+        .iter()
+        .map(|(a, b, mp)| {
+            json!({
+                "a": a, "b": b,
+                "midpoint": mp,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(*mp)),
+            })
+        })
+        .collect();
+    let hits = astrology::midpoint_hits(&chart, orb);
+    let h: Vec<Value> = hits
+        .iter()
+        .map(|h| {
+            json!({
+                "a": h.a, "b": h.b, "hit_by": h.hit_by,
+                "angle": h.angle, "orb": h.orb, "midpoint": h.midpoint,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "orb": orb,
+        "midpoints": mps,
+        "hits": h,
+    }))
+}
+
+async fn antiscia_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let orb: f64 = match q.get("orb").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("orb must be positive"),
+        Some(Err(_)) => return bad_request("orb must be a number"),
+        None => 1.0,
+    };
+    let chart = snapshot_longitudes(jd);
+    let per_body: Vec<Value> = chart
+        .iter()
+        .map(|(n, lon)| {
+            let a = astrology::antiscion(*lon);
+            let c = astrology::contra_antiscion(*lon);
+            json!({
+                "body": n,
+                "longitude": lon,
+                "antiscion": a,
+                "antiscion_position": planet_longitude_to_json(&PlanetLongitude::new(a)),
+                "contra_antiscion": c,
+                "contra_antiscion_position": planet_longitude_to_json(&PlanetLongitude::new(c)),
+            })
+        })
+        .collect();
+    let hits = astrology::antiscia_hits(&chart, orb);
+    let h: Vec<Value> = hits
+        .iter()
+        .map(|h| {
+            json!({
+                "body": h.body, "antiscion": h.antiscion,
+                "hit_by": h.hit_by, "orb": h.orb, "kind": h.kind,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "orb": orb,
+        "bodies": per_body,
+        "hits": h,
+    }))
+}
+
+async fn decans_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let chart = snapshot_longitudes(jd);
+    let arr: Vec<Value> = chart
+        .iter()
+        .map(|(n, lon)| {
+            let d = astrology::decan_for(*lon);
+            json!({
+                "body": n,
+                "longitude": lon,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                "decan_in_sign": d.decan_in_sign,
+                "egyptian_index": d.egyptian_index,
+                "triplicity_ruler": d.triplicity_ruler,
+                "chaldean_ruler": d.chaldean_ruler,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "bodies": arr,
+    }))
+}
+
+async fn terms_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let system = q
+        .get("system")
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_else(|| "ptolemaic".into());
+    let chart = snapshot_longitudes(jd);
+    let arr: Vec<Value> = chart
+        .iter()
+        .map(|(n, lon)| {
+            let term = match system.as_str() {
+                "egyptian" => astrology::egyptian_term(*lon),
+                _ => astrology::ptolemaic_term(*lon),
+            };
+            json!({
+                "body": n,
+                "longitude": lon,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                "term_ruler": term,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "system": system,
+        "bodies": arr,
+    }))
+}
+
+async fn triplicity_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let chart = snapshot_longitudes(jd);
+    let is_day = latlong.map(|o| {
+        let sun_lon = swisseph::swe::calc_ut(jd, 0, 2).map(|r| r.out[0]).unwrap_or(0.0);
+        let h = compute_houses(jd, o.lat, o.long, 'P');
+        let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+        (sun_lon - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0)
+    });
+    let arr: Vec<Value> = chart
+        .iter()
+        .map(|(n, lon)| {
+            let t = astrology::triplicity_rulers(*lon);
+            let lord = match is_day {
+                Some(true) => Some(t.day),
+                Some(false) => Some(t.night),
+                None => None,
+            };
+            json!({
+                "body": n,
+                "longitude": lon,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                "day_ruler": t.day,
+                "night_ruler": t.night,
+                "participating_ruler": t.participating,
+                "active_ruler": lord,
+            })
+        })
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "is_day": is_day,
+        "bodies": arr,
+    }))
+}
+
+async fn receptions_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let chart = snapshot_longitudes(jd);
+    let recs = astrology::receptions(&chart);
+    let arr: Vec<Value> = recs
+        .iter()
+        .map(|r| json!({"a": r.a, "b": r.b, "kind": r.kind}))
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "receptions": arr,
+    }))
+}
+
+async fn equation_of_time_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, _) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let m = astrology::equation_of_time_minutes(jd);
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "equation_of_time_minutes": m,
+    }))
+}
+
+async fn ingresses_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let start_jd = match q.get("date") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let count: usize = match q.get("count").map(|s| s.parse::<usize>()) {
+        Some(Ok(v)) if v > 0 => v,
+        Some(Ok(_)) => return bad_request("count must be positive"),
+        Some(Err(_)) => return bad_request("count must be an integer"),
+        None => 4,
+    };
+    let list = astrology::upcoming_cardinal_ingresses(start_jd, count);
+    let arr: Vec<Value> = list
+        .iter()
+        .map(|i| json!({
+            "jd": i.jd, "iso_date": i.iso_date,
+            "sign": i.sign, "kind": i.kind,
+        }))
+        .collect();
+    json_ok(json!({
+        "start_jd": start_jd,
+        "count": count,
+        "ingresses": arr,
+    }))
+}
+
+async fn lunations_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let start = match q.get("date_start").or(q.get("date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => jd_now(),
+    };
+    let lookahead: f64 = match q.get("lookahead").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        Some(Ok(_)) => return bad_request("lookahead must be positive"),
+        Some(Err(_)) => return bad_request("lookahead must be a number"),
+        None => 90.0,
+    };
+    let end = match q.get("date_end") {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => start + lookahead,
+    };
+    let list = astrology::lunations_in_window(start, end);
+    let arr: Vec<Value> = list
+        .iter()
+        .map(|l| json!({
+            "jd": l.jd, "iso_date": l.iso_date,
+            "kind": l.kind, "moon_longitude": l.moon_longitude,
+        }))
+        .collect();
+    json_ok(json!({
+        "start_jd": start,
+        "end_jd": end,
+        "lunations": arr,
+    }))
+}
+
+async fn heliacal_endpoint(
+    AxumPath(star): AxumPath<String>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("required: latitude and longitude"),
+    };
+    let start_jd = jd_opt.unwrap_or_else(jd_now);
+    let jd = astrology::next_heliacal_rising(start_jd, &star, &observer);
+    match jd {
+        Some(j) => json_ok(json!({
+            "star": star,
+            "start_jd": start_jd,
+            "jd": j,
+            "iso_date": jd2iso(j),
+        })),
+        None => not_found(&format!(
+            "no heliacal rising found for {star} within search horizon"
+        )),
+    }
+}
+
+async fn zodiacal_releasing_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let tz = q.get("tz").map(|s| s.as_str());
+    let natal_jd = match q.get("natal_jd").or(q.get("natal_date")) {
+        Some(s) => match parse_jd_or_iso_date_in_tz(s, tz) {
+            Ok(j) => j,
+            Err(e) => return bad_request(&e),
+        },
+        None => return bad_request("required: natal_jd or natal_date"),
+    };
+    let lat = match q.get("natal_latitude").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) => v,
+        _ => return bad_request("required: natal_latitude"),
+    };
+    let long = match q.get("natal_longitude").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) => v,
+        _ => return bad_request("required: natal_longitude"),
+    };
+    let count: usize = match q.get("count").map(|s| s.parse::<usize>()) {
+        Some(Ok(v)) if v > 0 => v,
+        Some(Ok(_)) => return bad_request("count must be positive"),
+        Some(Err(_)) => return bad_request("count must be an integer"),
+        None => 12,
+    };
+    let h = compute_houses(natal_jd, lat, long, 'P');
+    use cerridwen::planets::*;
+    let sun = swisseph::swe::calc_ut(natal_jd, SE_SUN as u32, 2)
+        .map(|r| r.out[0])
+        .unwrap_or(0.0);
+    let moon = swisseph::swe::calc_ut(natal_jd, SE_MOON as u32, 2)
+        .map(|r| r.out[0])
+        .unwrap_or(0.0);
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
+    let spirit = if is_day {
+        (h.ascendant + sun - moon).rem_euclid(360.0)
+    } else {
+        (h.ascendant + moon - sun).rem_euclid(360.0)
+    };
+    let periods = astrology::zodiacal_releasing_l1(spirit, count);
+    let arr: Vec<Value> = periods
+        .iter()
+        .map(|p| json!({
+            "level": p.level,
+            "sign": p.sign,
+            "lord": p.lord,
+            "years": p.years,
+            "start_year_offset": p.start_year_offset,
+            "end_year_offset": p.end_year_offset,
+        }))
+        .collect();
+    json_ok(json!({
+        "natal_jd": natal_jd,
+        "lot_spirit": spirit,
+        "is_day": is_day,
+        "periods": arr,
+    }))
+}
+
+async fn natal_chart_endpoint(Query(q): Query<HashMap<String, String>>) -> Response {
+    let (jd_opt, latlong) = match parse_observer_and_jd(&q) {
+        Ok(x) => x,
+        Err(e) => return bad_request(&e),
+    };
+    let observer = match latlong {
+        Some(o) => o,
+        None => return bad_request("required: latitude and longitude"),
+    };
+    let jd = jd_opt.unwrap_or_else(jd_now);
+    let system = match q.get("house_system") {
+        Some(s) => match parse_house_system(s) {
+            Some(c) => c,
+            None => return bad_request(&format!("unknown house_system: {s}")),
+        },
+        None => 'P',
+    };
+    let h = compute_houses(jd, observer.lat, observer.long, system);
+    let chart = snapshot_longitudes(jd);
+    let bodies_full: Vec<Value> = chart
+        .iter()
+        .map(|(n, lon)| {
+            let house = astrology::house_of_longitude(*lon, jd, &observer, system);
+            json!({
+                "name": n,
+                "longitude": lon,
+                "position": planet_longitude_to_json(&PlanetLongitude::new(*lon)),
+                "house": house,
+            })
+        })
+        .collect();
+    // Aspects via the existing engine.
+    let orb: f64 = match q.get("orb").map(|s| s.parse::<f64>()) {
+        Some(Ok(v)) if v > 0.0 => v,
+        _ => 5.0,
+    };
+    let bodies = default_transit_bodies().to_vec();
+    let extras: Vec<(String, f64, f64)> = Vec::new();
+    let aspects = compute_aspects_extended(jd, &bodies, &extras, orb);
+    let asp_arr: Vec<Value> = aspects.iter().map(instant_aspect_to_json).collect();
+    use cerridwen::planets::*;
+    let lon = |id: i32| -> f64 {
+        swisseph::swe::calc_ut(jd, id as u32, 2)
+            .map(|r| r.out[0])
+            .unwrap_or(f64::NAN)
+    };
+    let sun = lon(SE_SUN);
+    let moon = lon(SE_MOON);
+    let mercury = lon(SE_MERCURY);
+    let venus = lon(SE_VENUS);
+    let mars = lon(SE_MARS);
+    let jupiter = lon(SE_JUPITER);
+    let saturn = lon(SE_SATURN);
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
+    let parts = astrology::arabic_parts(
+        h.ascendant, sun, moon, mercury, venus, mars, jupiter, saturn, is_day,
+    );
+    let part_arr: Vec<Value> = parts
+        .iter()
+        .map(|p| json!({
+            "name": p.name, "longitude": p.longitude,
+            "position": planet_longitude_to_json(&PlanetLongitude::new(p.longitude)),
+            "formula": p.formula,
+        }))
+        .collect();
+    json_ok(json!({
+        "jd": jd,
+        "iso_date": jd2iso(jd),
+        "latitude": observer.lat,
+        "longitude": observer.long,
+        "is_day": is_day,
+        "houses": houses_to_json(&h, jd),
+        "bodies": bodies_full,
+        "aspects": asp_arr,
+        "lots": part_arr,
+    }))
 }
 
 // -- end new endpoints -----------------------------------------------------

@@ -314,6 +314,100 @@ fn tools_list() -> Value {
                     "longitude": { "type": "number" }
                 }
             })),
+            tool_def("get_midpoints", "Every pairwise midpoint plus hits to other planets at harmonics 0/45/90/135/180.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" },
+                    "orb":  { "type": "number", "description": "Default 1.5" }
+                }
+            })),
+            tool_def("get_antiscia", "Antiscia + contra-antiscia per body plus any hits in the chart.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" },
+                    "orb":  { "type": "number", "description": "Default 1" }
+                }
+            })),
+            tool_def("get_decans", "Per-body decan with Triplicity, Chaldean, and Egyptian rulers/indices.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" }
+                }
+            })),
+            tool_def("get_terms", "Per-body bound ruler (Ptolemaic by default; system=egyptian for the older system).", json!({
+                "type": "object",
+                "properties": {
+                    "date":   { "type": "string" },
+                    "tz":     { "type": "string" },
+                    "system": { "type": "string", "enum": ["ptolemaic", "egyptian"] }
+                }
+            })),
+            tool_def("get_triplicity", "Dorothean triplicity rulers per body. With observer, marks the active (day/night) ruler.", json!({
+                "type": "object",
+                "properties": {
+                    "date":      { "type": "string" },
+                    "tz":        { "type": "string" },
+                    "latitude":  { "type": "number" },
+                    "longitude": { "type": "number" }
+                }
+            })),
+            tool_def("get_receptions", "Mutual receptions by traditional rulership across the chart.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" }
+                }
+            })),
+            tool_def("get_equation_of_time", "Apparent solar time minus mean solar time at a JD, in minutes.", json!({
+                "type": "object",
+                "properties": {
+                    "date": { "type": "string" },
+                    "tz":   { "type": "string" }
+                }
+            })),
+            tool_def("get_ingresses", "Upcoming cardinal-sign ingresses (equinoxes / solstices).", json!({
+                "type": "object",
+                "properties": {
+                    "date":  { "type": "string" },
+                    "tz":    { "type": "string" },
+                    "count": { "type": "integer", "description": "Default 4" }
+                }
+            })),
+            tool_def("get_lunations", "New / first-quarter / full / last-quarter moons in a window.", json!({
+                "type": "object",
+                "properties": {
+                    "date_start": { "type": "string" },
+                    "date_end":   { "type": "string" },
+                    "lookahead":  { "type": "number", "description": "Days forward; default 90" },
+                    "tz":         { "type": "string" }
+                }
+            })),
+            tool_def("get_zodiacal_releasing", "Zodiacal Releasing L1 periods from the Lot of Spirit.", json!({
+                "type": "object",
+                "required": ["natal_date", "natal_latitude", "natal_longitude"],
+                "properties": {
+                    "natal_date":      { "type": "string" },
+                    "natal_latitude":  { "type": "number" },
+                    "natal_longitude": { "type": "number" },
+                    "count":           { "type": "integer", "description": "Default 12" },
+                    "tz":              { "type": "string" }
+                }
+            })),
+            tool_def("get_natal_chart", "Combined natal chart: houses + bodies-with-houses + aspects + Hellenistic lots.", json!({
+                "type": "object",
+                "required": ["latitude", "longitude"],
+                "properties": {
+                    "date":         { "type": "string" },
+                    "tz":           { "type": "string" },
+                    "latitude":     { "type": "number" },
+                    "longitude":    { "type": "number" },
+                    "house_system": { "type": "string" },
+                    "orb":          { "type": "number", "description": "Aspect orb (default 5)" }
+                }
+            })),
         ]
     })
 }
@@ -352,6 +446,17 @@ fn tools_call(params: &Value) -> Result<Value, (i64, String)> {
         "get_progressions" => tool_get_progressions(&args)?,
         "get_prenatal_eclipse" => tool_get_prenatal_eclipse(&args)?,
         "get_twilight" => tool_get_twilight(&args)?,
+        "get_midpoints" => tool_get_midpoints(&args)?,
+        "get_antiscia" => tool_get_antiscia(&args)?,
+        "get_decans" => tool_get_decans(&args)?,
+        "get_terms" => tool_get_terms(&args)?,
+        "get_triplicity" => tool_get_triplicity(&args)?,
+        "get_receptions" => tool_get_receptions(&args)?,
+        "get_equation_of_time" => tool_get_equation_of_time(&args)?,
+        "get_ingresses" => tool_get_ingresses(&args)?,
+        "get_lunations" => tool_get_lunations(&args)?,
+        "get_zodiacal_releasing" => tool_get_zodiacal_releasing(&args)?,
+        "get_natal_chart" => tool_get_natal_chart(&args)?,
         other => return Err((-32602, format!("unknown tool: {other}"))),
     };
     // MCP wraps tool output in a `content` array of blocks.
@@ -957,6 +1062,216 @@ fn tool_get_twilight(args: &Value) -> Result<Value, (i64, String)> {
         "civil": {"start_iso": jd2iso(t.civil_dawn), "end_iso": jd2iso(t.civil_dusk)},
         "nautical": {"start_iso": jd2iso(t.nautical_dawn), "end_iso": jd2iso(t.nautical_dusk)},
         "astronomical": {"start_iso": jd2iso(t.astronomical_dawn), "end_iso": jd2iso(t.astronomical_dusk)},
+    }))
+}
+
+// -----------------------------------------------------------------------------
+// Round 9 tools
+// -----------------------------------------------------------------------------
+
+fn tool_get_midpoints(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let orb = arg_num(args, "orb").unwrap_or(1.5);
+    let chart = snapshot_longitudes(jd);
+    let pairs = cerridwen::astrology::midpoints(&chart);
+    let mps: Vec<Value> = pairs.iter().map(|(a, b, m)| {
+        json!({"a": a, "b": b, "midpoint": m})
+    }).collect();
+    let hits = cerridwen::astrology::midpoint_hits(&chart, orb);
+    let h: Vec<Value> = hits.iter().map(|h| json!({
+        "a": h.a, "b": h.b, "hit_by": h.hit_by,
+        "angle": h.angle, "orb": h.orb, "midpoint": h.midpoint,
+    })).collect();
+    Ok(json!({"jd": jd, "orb": orb, "midpoints": mps, "hits": h}))
+}
+
+fn tool_get_antiscia(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let orb = arg_num(args, "orb").unwrap_or(1.0);
+    let chart = snapshot_longitudes(jd);
+    let bodies: Vec<Value> = chart.iter().map(|(n, lon)| {
+        json!({
+            "body": n,
+            "longitude": lon,
+            "antiscion": cerridwen::astrology::antiscion(*lon),
+            "contra_antiscion": cerridwen::astrology::contra_antiscion(*lon),
+        })
+    }).collect();
+    let hits = cerridwen::astrology::antiscia_hits(&chart, orb);
+    let h: Vec<Value> = hits.iter().map(|h| json!({
+        "body": h.body, "antiscion": h.antiscion,
+        "hit_by": h.hit_by, "orb": h.orb, "kind": h.kind,
+    })).collect();
+    Ok(json!({"jd": jd, "orb": orb, "bodies": bodies, "hits": h}))
+}
+
+fn tool_get_decans(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let chart = snapshot_longitudes(jd);
+    let arr: Vec<Value> = chart.iter().map(|(n, lon)| {
+        let d = cerridwen::astrology::decan_for(*lon);
+        json!({
+            "body": n, "longitude": lon,
+            "decan_in_sign": d.decan_in_sign,
+            "egyptian_index": d.egyptian_index,
+            "triplicity_ruler": d.triplicity_ruler,
+            "chaldean_ruler": d.chaldean_ruler,
+        })
+    }).collect();
+    Ok(json!({"jd": jd, "bodies": arr}))
+}
+
+fn tool_get_terms(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let system = arg_str(args, "system").unwrap_or("ptolemaic");
+    let chart = snapshot_longitudes(jd);
+    let arr: Vec<Value> = chart.iter().map(|(n, lon)| {
+        let term = if system == "egyptian" {
+            cerridwen::astrology::egyptian_term(*lon)
+        } else {
+            cerridwen::astrology::ptolemaic_term(*lon)
+        };
+        json!({"body": n, "longitude": lon, "term_ruler": term})
+    }).collect();
+    Ok(json!({"jd": jd, "system": system, "bodies": arr}))
+}
+
+fn tool_get_triplicity(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let observer = parse_observer(args)?;
+    let chart = snapshot_longitudes(jd);
+    let is_day = observer.map(|o| {
+        let sun_lon = swisseph::swe::calc_ut(jd, 0, 2).map(|r| r.out[0]).unwrap_or(0.0);
+        let h = compute_houses(jd, o.lat, o.long, 'P');
+        let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+        (sun_lon - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0)
+    });
+    let arr: Vec<Value> = chart.iter().map(|(n, lon)| {
+        let t = cerridwen::astrology::triplicity_rulers(*lon);
+        let active = match is_day {
+            Some(true) => Some(t.day),
+            Some(false) => Some(t.night),
+            None => None,
+        };
+        json!({
+            "body": n, "longitude": lon,
+            "day_ruler": t.day, "night_ruler": t.night,
+            "participating_ruler": t.participating,
+            "active_ruler": active,
+        })
+    }).collect();
+    Ok(json!({"jd": jd, "is_day": is_day, "bodies": arr}))
+}
+
+fn tool_get_receptions(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let chart = snapshot_longitudes(jd);
+    let recs = cerridwen::astrology::receptions(&chart);
+    let arr: Vec<Value> = recs.iter().map(|r| json!({
+        "a": r.a, "b": r.b, "kind": r.kind,
+    })).collect();
+    Ok(json!({"jd": jd, "receptions": arr}))
+}
+
+fn tool_get_equation_of_time(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let m = cerridwen::astrology::equation_of_time_minutes(jd);
+    Ok(json!({"jd": jd, "iso_date": jd2iso(jd), "equation_of_time_minutes": m}))
+}
+
+fn tool_get_ingresses(args: &Value) -> Result<Value, (i64, String)> {
+    let start_jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(4) as usize;
+    let list = cerridwen::astrology::upcoming_cardinal_ingresses(start_jd, count);
+    let arr: Vec<Value> = list.iter().map(|i| json!({
+        "jd": i.jd, "iso_date": i.iso_date,
+        "sign": i.sign, "kind": i.kind,
+    })).collect();
+    Ok(json!({"start_jd": start_jd, "ingresses": arr}))
+}
+
+fn tool_get_lunations(args: &Value) -> Result<Value, (i64, String)> {
+    let start = parse_date_arg(args, "date_start")?
+        .or(parse_date_arg(args, "date")?)
+        .unwrap_or_else(jd_now);
+    let lookahead = arg_num(args, "lookahead").unwrap_or(90.0);
+    let end = match arg_str(args, "date_end") {
+        Some(s) => parse_jd_or_iso_date_in_tz(s, arg_str(args, "tz")).map_err(|e| (-32602, e))?,
+        None => start + lookahead,
+    };
+    let list = cerridwen::astrology::lunations_in_window(start, end);
+    let arr: Vec<Value> = list.iter().map(|l| json!({
+        "jd": l.jd, "iso_date": l.iso_date,
+        "kind": l.kind, "moon_longitude": l.moon_longitude,
+    })).collect();
+    Ok(json!({"start_jd": start, "end_jd": end, "lunations": arr}))
+}
+
+fn tool_get_zodiacal_releasing(args: &Value) -> Result<Value, (i64, String)> {
+    let natal_jd = parse_date_arg(args, "natal_date")?
+        .ok_or((-32602, "missing natal_date".to_string()))?;
+    let lat = arg_num(args, "natal_latitude").ok_or((-32602, "missing natal_latitude".to_string()))?;
+    let long = arg_num(args, "natal_longitude").ok_or((-32602, "missing natal_longitude".to_string()))?;
+    let count = args.get("count").and_then(|v| v.as_u64()).unwrap_or(12) as usize;
+    let h = compute_houses(natal_jd, lat, long, 'P');
+    use cerridwen::planets::*;
+    let sun = swisseph::swe::calc_ut(natal_jd, SE_SUN as u32, 2).map(|r| r.out[0]).unwrap_or(0.0);
+    let moon = swisseph::swe::calc_ut(natal_jd, SE_MOON as u32, 2).map(|r| r.out[0]).unwrap_or(0.0);
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
+    let spirit = if is_day {
+        (h.ascendant + sun - moon).rem_euclid(360.0)
+    } else {
+        (h.ascendant + moon - sun).rem_euclid(360.0)
+    };
+    let periods = cerridwen::astrology::zodiacal_releasing_l1(spirit, count);
+    let arr: Vec<Value> = periods.iter().map(|p| json!({
+        "level": p.level, "sign": p.sign, "lord": p.lord,
+        "years": p.years,
+        "start_year_offset": p.start_year_offset,
+        "end_year_offset": p.end_year_offset,
+    })).collect();
+    Ok(json!({"natal_jd": natal_jd, "lot_spirit": spirit, "is_day": is_day, "periods": arr}))
+}
+
+fn tool_get_natal_chart(args: &Value) -> Result<Value, (i64, String)> {
+    let jd = parse_date_arg(args, "date")?.unwrap_or_else(jd_now);
+    let observer = parse_observer(args)?.ok_or((-32602, "latitude/longitude required".into()))?;
+    let system = match arg_str(args, "house_system") {
+        Some(s) => parse_house_system(s).ok_or_else(|| (-32602, format!("unknown house_system: {s}")))?,
+        None => 'P',
+    };
+    let h = compute_houses(jd, observer.lat, observer.long, system);
+    let chart = snapshot_longitudes(jd);
+    let bodies: Vec<Value> = chart.iter().map(|(n, lon)| {
+        json!({
+            "name": n, "longitude": lon,
+            "house": cerridwen::astrology::house_of_longitude(*lon, jd, &observer, system),
+        })
+    }).collect();
+    use cerridwen::planets::*;
+    let lon = |id: i32| swisseph::swe::calc_ut(jd, id as u32, 2).map(|r| r.out[0]).unwrap_or(f64::NAN);
+    let sun = lon(SE_SUN);
+    let moon = lon(SE_MOON);
+    let mercury = lon(SE_MERCURY);
+    let venus = lon(SE_VENUS);
+    let mars = lon(SE_MARS);
+    let jupiter = lon(SE_JUPITER);
+    let saturn = lon(SE_SATURN);
+    let dsc = (h.ascendant + 180.0).rem_euclid(360.0);
+    let is_day = (sun - h.ascendant).rem_euclid(360.0) >= (dsc - h.ascendant).rem_euclid(360.0);
+    let parts = cerridwen::astrology::arabic_parts(
+        h.ascendant, sun, moon, mercury, venus, mars, jupiter, saturn, is_day,
+    );
+    let part_arr: Vec<Value> = parts.iter().map(|p| json!({
+        "name": p.name, "longitude": p.longitude, "formula": p.formula,
+    })).collect();
+    Ok(json!({
+        "jd": jd, "iso_date": jd2iso(jd),
+        "ascendant": h.ascendant, "mc": h.mc,
+        "is_day": is_day,
+        "bodies": bodies,
+        "lots": part_arr,
     }))
 }
 

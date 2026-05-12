@@ -122,6 +122,17 @@ fn tools_list_contains_all_tools() {
         "get_progressions",
         "get_prenatal_eclipse",
         "get_twilight",
+        "get_midpoints",
+        "get_antiscia",
+        "get_decans",
+        "get_terms",
+        "get_triplicity",
+        "get_receptions",
+        "get_equation_of_time",
+        "get_ingresses",
+        "get_lunations",
+        "get_zodiacal_releasing",
+        "get_natal_chart",
     ] {
         assert!(
             names.contains(&need),

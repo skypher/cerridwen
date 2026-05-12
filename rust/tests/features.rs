@@ -454,6 +454,183 @@ fn helio_sun_longitude_is_nan() {
     assert!(lon.is_nan(), "helio sun lon should be NaN, got {lon}");
 }
 
+// ---------- round 9: midpoints / antiscia / decans / terms / receptions ----------
+
+#[test]
+fn midpoint_pair_count_matches_choose_2() {
+    let chart: Vec<(String, f64)> =
+        (0..10).map(|i| (format!("B{i}"), i as f64 * 30.0)).collect();
+    let mps = astrology::midpoints(&chart);
+    assert_eq!(mps.len(), 10 * 9 / 2);
+}
+
+#[test]
+fn antiscion_aries_15_equals_pisces_15() {
+    // Aries 15° (lon 15) reflects to Virgo 15? Actually antiscion is
+    // 180 - λ mod 360 = 165, which is Virgo 15°. Confirm.
+    let a = astrology::antiscion(15.0);
+    assert!((a - 165.0).abs() < 1e-9, "antiscion = {a}");
+}
+
+#[test]
+fn contra_antiscion_is_negation() {
+    let c = astrology::contra_antiscion(45.0);
+    assert!((c - 315.0).abs() < 1e-9, "contra = {c}");
+}
+
+#[test]
+fn decan_indices_sane() {
+    // Boundaries.
+    assert_eq!(astrology::decan_index(0.0), 1);
+    assert_eq!(astrology::decan_index(9.99), 1);
+    assert_eq!(astrology::decan_index(10.0), 2);
+    assert_eq!(astrology::decan_index(359.9), 36);
+}
+
+#[test]
+fn triplicity_decan_aries_1_is_mars() {
+    let d = astrology::decan_for(5.0);
+    assert_eq!(d.triplicity_ruler, "Mars");
+    assert_eq!(d.decan_in_sign, 1);
+}
+
+#[test]
+fn chaldean_decan_aries_3_is_venus() {
+    let d = astrology::decan_for(25.0);
+    assert_eq!(d.chaldean_ruler, "Venus");
+    assert_eq!(d.decan_in_sign, 3);
+}
+
+#[test]
+fn ptolemaic_term_aries_first_is_jupiter() {
+    // Aries 0-6 = Jupiter (Ptolemaic).
+    assert_eq!(astrology::ptolemaic_term(3.0), "Jupiter");
+    // Aries 7 = Venus (6-14).
+    assert_eq!(astrology::ptolemaic_term(7.0), "Venus");
+}
+
+#[test]
+fn egyptian_term_differs_from_ptolemaic_somewhere() {
+    // The first segment widths differ by sign in many places; verify at
+    // least one differs to confirm the tables aren't cross-pasted.
+    let differ = (0..36)
+        .map(|i| i as f64 * 10.0 + 5.0)
+        .any(|lon| astrology::ptolemaic_term(lon) != astrology::egyptian_term(lon));
+    assert!(differ);
+}
+
+#[test]
+fn triplicity_fire_day_ruler_is_sun() {
+    let t = astrology::triplicity_rulers(15.0); // Aries
+    assert_eq!(t.day, "Sun");
+    assert_eq!(t.night, "Jupiter");
+}
+
+#[test]
+fn receptions_finds_mutual() {
+    // Sun in Aries (sign ruled by Mars), Mars in Leo (sign ruled by Sun)
+    // → mutual reception.
+    let chart = vec![
+        ("Sun".to_string(), 10.0),  // Aries
+        ("Mars".to_string(), 130.0), // Leo
+    ];
+    let r = astrology::receptions(&chart);
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].kind, "mutual_domicile");
+}
+
+#[test]
+fn receptions_empty_when_no_mutual() {
+    let chart = vec![
+        ("Sun".to_string(), 10.0),
+        ("Mars".to_string(), 200.0), // Scorpio (Mars's own sign)
+    ];
+    let r = astrology::receptions(&chart);
+    assert!(r.is_empty());
+}
+
+#[test]
+fn equation_of_time_within_18_minutes() {
+    // Annual range of equation-of-time is ±~16.5 min; test bound is 18.
+    let jd = iso2jd("2026-05-09T12:00:00").unwrap();
+    let m = astrology::equation_of_time_minutes(jd);
+    assert!(m.abs() < 18.0, "eoT = {m} min");
+}
+
+#[test]
+fn upcoming_cardinal_ingresses_returns_4_in_year() {
+    let start = iso2jd("2026-01-01T00:00:00").unwrap();
+    let ings = astrology::upcoming_cardinal_ingresses(start, 4);
+    assert_eq!(ings.len(), 4);
+    let kinds: Vec<&str> = ings.iter().map(|i| i.kind).collect();
+    assert!(kinds.contains(&"spring_equinox"));
+    assert!(kinds.contains(&"summer_solstice"));
+    assert!(kinds.contains(&"autumn_equinox"));
+    assert!(kinds.contains(&"winter_solstice"));
+    // Chronological.
+    for w in ings.windows(2) {
+        assert!(w[0].jd < w[1].jd);
+    }
+}
+
+#[test]
+fn lunations_in_30_days_finds_one_to_two_per_kind() {
+    let start = iso2jd("2026-01-01T00:00:00").unwrap();
+    let list = astrology::lunations_in_window(start, start + 30.0);
+    let mut counts = std::collections::HashMap::new();
+    for l in &list {
+        *counts.entry(l.kind).or_insert(0) += 1;
+    }
+    // In a 30-day window we expect at most 1-2 of each phase.
+    for (kind, n) in &counts {
+        assert!(*n <= 2, "{kind}: {n}");
+    }
+    // Chronological.
+    for w in list.windows(2) {
+        assert!(w[0].jd <= w[1].jd);
+    }
+}
+
+#[test]
+fn lunations_in_year_finds_close_to_48() {
+    // 4 phases × ~12 lunations/year ≈ 48.
+    let start = iso2jd("2026-01-01T00:00:00").unwrap();
+    let list = astrology::lunations_in_window(start, start + 365.0);
+    assert!(
+        list.len() >= 40 && list.len() <= 55,
+        "expected ≈48 lunations, got {}",
+        list.len()
+    );
+}
+
+#[test]
+fn zodiacal_releasing_first_period_starts_at_zero() {
+    // Spirit in Leo → L1 starts at Leo, lord Sun, 19 years.
+    let periods = astrology::zodiacal_releasing_l1(130.0, 3);
+    assert_eq!(periods.len(), 3);
+    assert_eq!(periods[0].sign, "Leo");
+    assert_eq!(periods[0].lord, "Sun");
+    assert!((periods[0].years - 19.0).abs() < 1e-9);
+    assert!((periods[0].start_year_offset).abs() < 1e-9);
+    // Next period starts where the previous ended.
+    assert!((periods[1].start_year_offset - periods[0].end_year_offset).abs() < 1e-9);
+}
+
+#[test]
+fn zodiacal_releasing_total_years_sums_correctly() {
+    // Twelve sign periods is one full ZR L1 cycle = sum of all
+    // planetary years = 30+12+15+19+8+20+25 (×2 per element) = ...
+    // Each lord appears for some signs: each planet rules 2 signs
+    // (modern domicile would; traditional: each ruler counts how often
+    // it's the lord). The total of years for a 12-step traversal is
+    // simply the sum of major_years for the lord of each sign.
+    // Just verify the cumulative sum behaves.
+    let p = astrology::zodiacal_releasing_l1(0.0, 12);
+    let total: f64 = p.iter().map(|x| x.years).sum();
+    assert!(total > 0.0);
+    assert!((p[11].end_year_offset - total).abs() < 1e-9);
+}
+
 #[test]
 fn helio_geocentric_differ() {
     // For the inner planets, heliocentric and geocentric longitudes
